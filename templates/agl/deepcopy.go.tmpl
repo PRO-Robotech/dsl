@@ -59,22 +59,22 @@ func (in *{{ $res.Name }}Spec) DeepCopyInto(out *{{ $res.Name }}Spec) {
 
 {{- range $res.K8sSubresources }}
 
-func (in *{{ $res.Name }}{{ title .Name }}) DeepCopyInto(out *{{ $res.Name }}{{ title .Name }}) {
+func (in *{{ $res.Name }}{{ title .Name }}Sub) DeepCopyInto(out *{{ $res.Name }}{{ title .Name }}Sub) {
 	*out = *in
 	out.TypeMeta = in.TypeMeta
 	in.ObjectMeta.DeepCopyInto(&out.ObjectMeta)
 }
 
-func (in *{{ $res.Name }}{{ title .Name }}) DeepCopy() *{{ $res.Name }}{{ title .Name }} {
+func (in *{{ $res.Name }}{{ title .Name }}Sub) DeepCopy() *{{ $res.Name }}{{ title .Name }}Sub {
 	if in == nil {
 		return nil
 	}
-	out := new({{ $res.Name }}{{ title .Name }})
+	out := new({{ $res.Name }}{{ title .Name }}Sub)
 	in.DeepCopyInto(out)
 	return out
 }
 
-func (in *{{ $res.Name }}{{ title .Name }}) DeepCopyObject() runtime.Object {
+func (in *{{ $res.Name }}{{ title .Name }}Sub) DeepCopyObject() runtime.Object {
 	return in.DeepCopy()
 }
 {{- end }}

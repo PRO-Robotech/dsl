@@ -11,7 +11,7 @@ func KnownTypes() []runtime.Object {
 		&{{ $res.Name }}{},
 		&{{ $res.Name }}List{},
 {{- range $res.K8sSubresources }}
-		&{{ $res.Name }}{{ title .Name }}{},
+		&{{ $res.Name }}{{ title .Name }}Sub{},
 {{- end }}
 {{- end }}
 	}

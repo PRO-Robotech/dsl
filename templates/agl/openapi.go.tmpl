@@ -99,10 +99,10 @@ func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenA
 
 {{- range $res.K8sSubresources }}
 
-	defs["{{ $.Module }}/pkg/apis/{{ $.Project.Name }}/{{ $.Project.APIVersion }}.{{ $res.Name }}{{ title .Name }}"] = common.OpenAPIDefinition{
+	defs["{{ $.Module }}/pkg/apis/{{ $.Project.Name }}/{{ $.Project.APIVersion }}.{{ $res.Name }}{{ title .Name }}Sub"] = common.OpenAPIDefinition{
 		Schema: spec.Schema{
 			SchemaProps: spec.SchemaProps{
-				Description: "{{ $res.Name }}{{ title .Name }} is a sub-resource.",
+				Description: "{{ $res.Name }}{{ title .Name }}Sub is a sub-resource.",
 				Type: []string{"object"},
 				Properties: map[string]spec.Schema{
 					"apiVersion": {SchemaProps: spec.SchemaProps{Type: []string{"string"}}},

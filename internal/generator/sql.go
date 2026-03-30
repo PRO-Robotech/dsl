@@ -433,7 +433,7 @@ func (g *Generator) generateSQLViews() error {
 						"    'name', b.%s,\n"+
 						"    'namespace', COALESCE(b.namespace,''),\n"+
 						"    'resType', '%s'\n"+
-						"  )\n"+
+						"  ) AS val\n"+
 						"  FROM %s.tbl_%s b WHERE b.uid = uid_val",
 					ref.SQLColumn,
 					ref.Target,
@@ -444,7 +444,7 @@ func (g *Generator) generateSQLViews() error {
 			buf.WriteString(fmt.Sprintf(
 				"CREATE OR REPLACE FUNCTION %s.resolve_%s_refs(uid_val uuid)\n"+
 					"RETURNS jsonb LANGUAGE sql STABLE AS $fn$\n"+
-					"  SELECT COALESCE(jsonb_agg(r), '[]'::jsonb) FROM (\n%s\n  ) r;\n"+
+					"  SELECT COALESCE(jsonb_agg(r.val), '[]'::jsonb) FROM (\n%s\n  ) r;\n"+
 					"$fn$;\n\n",
 				g.Schema.DBSchema, res.Table, body))
 			continue
@@ -470,7 +470,7 @@ func (g *Generator) generateSQLViews() error {
 							"    'name', b.%s,\n"+
 							"    'namespace', COALESCE(b.namespace,''),\n"+
 							"    'resType', '%s'\n"+
-							"  )\n"+
+							"  ) AS val\n"+
 							"  FROM %s.tbl_%s b\n"+
 							"  JOIN %s.tbl_%s t ON t.name = b.%s\n"+
 							"  WHERE t.uid = uid_val",
@@ -495,7 +495,7 @@ func (g *Generator) generateSQLViews() error {
 			buf.WriteString(fmt.Sprintf(
 				"CREATE OR REPLACE FUNCTION %s.resolve_%s_refs(uid_val uuid)\n"+
 					"RETURNS jsonb LANGUAGE sql STABLE AS $fn$\n"+
-					"  SELECT COALESCE(jsonb_agg(r), '[]'::jsonb) FROM (\n%s\n  ) r;\n"+
+					"  SELECT COALESCE(jsonb_agg(r.val), '[]'::jsonb) FROM (\n%s\n  ) r;\n"+
 					"$fn$;\n\n",
 				g.Schema.DBSchema, res.Table, body))
 		}

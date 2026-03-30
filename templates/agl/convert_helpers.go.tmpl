@@ -52,7 +52,7 @@ func ObjectMetaFromProto(out *metav1.ObjectMeta, meta *pb.ResourceMetadata) {
 
 // SelectionToProto converts K8s base.Selection to proto ResSelectors.
 func SelectionToProto(sel base.Selection) []*pb.ResSelector {
-	if sel.Name == "" && len(sel.Labels) == 0 && len(sel.SpecFields) == 0 {
+	if sel.Name == "" && sel.Namespace == "" && len(sel.Labels) == 0 && len(sel.SpecFields) == 0 {
 		return nil
 	}
 	return []*pb.ResSelector{

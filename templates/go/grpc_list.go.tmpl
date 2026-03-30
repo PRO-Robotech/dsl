@@ -29,6 +29,9 @@ func (s *Service{{ .Res.Name }}) List{{ .Res.Name }}s(
 				opts = append(opts, repository.WithSpecField(k, v))
 			}
 		}
+		for k, v := range sel.GetLabelSelector() {
+			opts = append(opts, repository.WithLabel(k, v))
+		}
 	}
 	items, err := reader.List{{ .Res.Name }}s(ctx, opts...)
 	if err != nil {

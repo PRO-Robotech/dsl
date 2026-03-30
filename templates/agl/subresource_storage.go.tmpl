@@ -27,7 +27,7 @@ func New{{ title .Name }}Storage(c *client.Client) rest.Storage {
 }
 
 func (s *{{ .Name }}Storage) New() runtime.Object {
-	return &v1alpha1.{{ $.Res.Name }}{{ title .Name }}{}
+	return &v1alpha1.{{ $.Res.Name }}{{ title .Name }}Sub{}
 }
 
 func (s *{{ .Name }}Storage) Destroy() {}
@@ -47,11 +47,11 @@ func (s *{{ .Name }}Storage) Get(ctx context.Context, name string, _ *metav1.Get
 	}
 
 	parent := convert.{{ $.Res.Name }}FromProto(items[0])
-	sub := &v1alpha1.{{ $.Res.Name }}{{ title .Name }}{
+	sub := &v1alpha1.{{ $.Res.Name }}{{ title .Name }}Sub{
 		ObjectMeta: parent.ObjectMeta,
 		{{ goField .SpecField }}: parent.{{ goField .SpecField }},
 	}
-	sub.TypeMeta.Kind = "{{ $.Res.Name }}{{ title .Name }}"
+	sub.TypeMeta.Kind = "{{ $.Res.Name }}{{ title .Name }}Sub"
 	sub.TypeMeta.APIVersion = v1alpha1.SchemeGroupVersion.String()
 	return sub, nil
 }
@@ -67,7 +67,7 @@ func (s *{{ .Name }}Storage) Update(ctx context.Context, name string, objInfo re
 		return nil, false, err
 	}
 
-	sub, ok := updated.(*v1alpha1.{{ $.Res.Name }}{{ title .Name }})
+	sub, ok := updated.(*v1alpha1.{{ $.Res.Name }}{{ title .Name }}Sub)
 	if !ok {
 		return nil, false, fmt.Errorf("unexpected type %T", updated)
 	}
@@ -93,11 +93,11 @@ func (s *{{ .Name }}Storage) Update(ctx context.Context, name string, objInfo re
 	}
 
 	result := convert.{{ $.Res.Name }}FromProto(out[0])
-	retSub := &v1alpha1.{{ $.Res.Name }}{{ title .Name }}{
+	retSub := &v1alpha1.{{ $.Res.Name }}{{ title .Name }}Sub{
 		ObjectMeta: result.ObjectMeta,
 		{{ goField .SpecField }}: result.{{ goField .SpecField }},
 	}
-	retSub.TypeMeta.Kind = "{{ $.Res.Name }}{{ title .Name }}"
+	retSub.TypeMeta.Kind = "{{ $.Res.Name }}{{ title .Name }}Sub"
 	retSub.TypeMeta.APIVersion = v1alpha1.SchemeGroupVersion.String()
 	return retSub, false, nil
 }

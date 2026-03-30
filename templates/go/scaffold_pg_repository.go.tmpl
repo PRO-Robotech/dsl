@@ -96,6 +96,11 @@ func (r *pgReader) List{{ $res.Name }}s(ctx context.Context, opts ...ListOption)
 {{- end }}
 {{- end }}
 {{- end }}
+	for k, v := range p.Labels {
+		wheres = append(wheres, fmt.Sprintf("labels @> hstore($%d, $%d)", argN, argN+1))
+		args = append(args, k, v)
+		argN += 2
+	}
 	if len(wheres) > 0 {
 		query += " WHERE " + strings.Join(wheres, " AND ")
 	}

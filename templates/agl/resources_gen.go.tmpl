@@ -19,7 +19,7 @@ func buildStorageMap(grpcClient *client.Client, opts options.StorageOptions) map
 {{- range $res := .Resources }}
 			v1alpha1.Resource{{ $res.Name }}s: {{ lower $res.Name }}registry.NewStorage(grpcClient, opts),
 {{- range $res.K8sSubresources }}
-			v1alpha1.Resource{{ $res.Name }}s + "/{{ .Name }}": {{ lower $res.Name }}registry.New{{ title .Name }}Storage(grpcClient),
+			v1alpha1.Resource{{ $res.Name }}s + "/{{ lower .Name }}": {{ lower $res.Name }}registry.New{{ title .Name }}Storage(grpcClient),
 {{- end }}
 {{- end }}
 		},

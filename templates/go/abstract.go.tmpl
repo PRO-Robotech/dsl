@@ -25,6 +25,7 @@ type ListParams struct {
 	Name       string
 	Namespace  string
 	SpecFields map[string]string
+	Labels     map[string]string
 }
 
 // ApplyListOptions applies ListOption functions and returns resolved params.
@@ -53,6 +54,16 @@ func WithSpecField(key, value string) ListOption {
 			p.SpecFields = make(map[string]string)
 		}
 		p.SpecFields[key] = value
+	}
+}
+
+// WithLabel filters results by a label key=value pair.
+func WithLabel(key, value string) ListOption {
+	return func(p *ListParams) {
+		if p.Labels == nil {
+			p.Labels = make(map[string]string)
+		}
+		p.Labels[key] = value
 	}
 }
 
