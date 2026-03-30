@@ -13,6 +13,7 @@ type goTemplateData struct {
 	DBSchema     string
 	DomainPkg    string
 	Project      ir.ProjectConfig
+	Types        []ir.CustomType
 	Resources    []ir.Resource
 	Restrictions map[string]ir.Restriction
 }
@@ -21,6 +22,7 @@ type goResTemplateData struct {
 	Module  string
 	Project ir.ProjectConfig
 	Res     *ir.Resource
+	Types   []ir.CustomType
 }
 
 func (g *Generator) goData() goTemplateData {
@@ -29,6 +31,7 @@ func (g *Generator) goData() goTemplateData {
 		DBSchema:     g.Schema.DBSchema,
 		DomainPkg:    g.Schema.Project.Name,
 		Project:      g.Schema.Project,
+		Types:        g.Schema.Types,
 		Resources:    g.Schema.Resources,
 		Restrictions: g.Schema.Restrictions,
 	}
@@ -219,6 +222,7 @@ func (g *Generator) generateGoRepository() error {
 		outFile  string
 	}{
 		{"abstract.go.tmpl", "internal/sg-server/repository/abstract_gen.go"},
+		{"pg_errors.go.tmpl", "internal/sg-server/repository/pg_errors_gen.go"},
 		{"syncer_decl.go.tmpl", "internal/sg-server/repository/pg/syncer/syncers_gen.go"},
 		{"pg_domain.go.tmpl", "internal/sg-server/repository/pg/domain/domain_gen.go"},
 		{"pg_dto.go.tmpl", "internal/sg-server/repository/pg/dto/dto_gen.go"},
@@ -295,6 +299,7 @@ func (g *Generator) generateGoTransport() error {
 			Module:  g.Schema.Module,
 			Project: g.Schema.Project,
 			Res:     res,
+			Types:   g.Schema.Types,
 		}
 
 		for _, gt := range genTemplates {

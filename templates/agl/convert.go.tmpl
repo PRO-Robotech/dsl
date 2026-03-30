@@ -54,8 +54,9 @@ func {{ .Res.Name }}FromProto(in *pb.{{ .Res.Name }}) *v1alpha1.{{ .Res.Name }} 
 {{- if .Res.List.HasRefs }}
 	for _, r := range in.GetRefs() {
 		out.Refs = append(out.Refs, v1alpha1.ResourceRef{
-			Name:    r.GetName(),
-			ResType: r.GetResType(),
+			Name:      r.GetName(),
+			Namespace: r.GetNamespace(),
+			ResType:   r.GetResType(),
 		})
 	}
 {{- end }}

@@ -9,6 +9,8 @@ import (
 	sg "{{ .Module }}/internal/sg-server/repository"
 	pb "{{ .Module }}/pkg/api/{{ .Project.Name }}/v1"
 	"{{ .Module }}/internal/sg-server/transport/grpc/service/{{ lower .Res.Name }}/dto"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // Delete{{ .Res.Name }}s handles the Delete RPC for {{ .Res.Name }}.
@@ -16,23 +18,30 @@ func (s *Service{{ .Res.Name }}) Delete{{ .Res.Name }}s(
 	ctx context.Context,
 	req *pb.{{ .Res.Name }}Req_Delete,
 ) (*pb.{{ .Res.Name }}Resp_Delete, error) {
+	if len(req.Get{{ resGoPlural .Res.Name }}()) == 0 {
+		return nil, status.Errorf(codes.InvalidArgument, "at least one {{ .Res.Name }} must be provided")
+	}
+	items := make([]{{ .Project.Name }}.{{ .Res.Name }}, 0, len(req.Get{{ resGoPlural .Res.Name }}()))
+	for _, pbItem := range req.Get{{ resGoPlural .Res.Name }}() {
+		d := dto.{{ .Res.Name }}FromProto(pbItem)
+		if err := {{ .Project.Name }}.Validate{{ .Res.Name }}DeleteMetadata(&d); err != nil {
+			return nil, status.Errorf(codes.InvalidArgument, "%v", err)
+		}
+		items = append(items, d)
+	}
+
 	writer, err := s.repo.Writer(ctx)
 	if err != nil {
 		return nil, err
 	}
-
-	items := make([]{{ .Project.Name }}.{{ .Res.Name }}, 0, len(req.Get{{ resGoPlural .Res.Name }}()))
-	for _, pbItem := range req.Get{{ resGoPlural .Res.Name }}() {
-		items = append(items, dto.{{ .Res.Name }}FromProto(pbItem))
-	}
+	defer func() { _ = writer.Abort(ctx) }()
 
 	if err := writer.Sync{{ .Res.Name }}s(ctx, sg.Delete, items); err != nil {
-		_ = writer.Abort(ctx)
-		return nil, err
+		return nil, sg.WrapPGError(err)
 	}
 
 	if err := writer.Commit(ctx); err != nil {
-		return nil, err
+		return nil, sg.WrapPGError(err)
 	}
 
 	return &pb.{{ .Res.Name }}Resp_Delete{}, nil

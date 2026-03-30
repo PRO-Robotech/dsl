@@ -1,21 +1,31 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
+	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/health"
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/reflection"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/encoding/protojson"
 
+	pb "{{ .Module }}/pkg/api/{{ .Project.Name }}/v1"
 	sg "{{ .Module }}/internal/sg-server/repository"
 {{- range .Resources }}
 	svc{{ .Name }} "{{ $.Module }}/internal/sg-server/transport/grpc/service/{{ lower .Name }}"
@@ -26,6 +36,10 @@ func main() {
 	grpcPort := os.Getenv("GRPC_PORT")
 	if grpcPort == "" {
 		grpcPort = "9006"
+	}
+	httpPort := os.Getenv("HTTP_PORT")
+	if httpPort == "" {
+		httpPort = "9007"
 	}
 	healthPort := os.Getenv("HEALTH_PORT")
 	if healthPort == "" {
@@ -70,13 +84,13 @@ func main() {
 	defer stop()
 
 	go func() {
-		mux := http.NewServeMux()
-		mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+		healthMux := http.NewServeMux()
+		healthMux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte("ok"))
 		})
 		log.Printf("health endpoint on :%s/healthz", healthPort)
-		if err := http.ListenAndServe(":"+healthPort, mux); err != nil {
+		if err := http.ListenAndServe(":"+healthPort, healthMux); err != nil {
 			log.Fatalf("health server: %v", err)
 		}
 	}()
@@ -85,6 +99,34 @@ func main() {
 		log.Printf("{{ .Project.Name }}-backend gRPC on :%s", grpcPort)
 		if err := srv.Serve(lis); err != nil {
 			log.Fatalf("serve: %v", err)
+		}
+	}()
+
+	go func() {
+		jsonPb := &runtime.JSONPb{
+			MarshalOptions: protojson.MarshalOptions{
+				UseProtoNames:   false,
+				EmitUnpopulated: true,
+			},
+			UnmarshalOptions: protojson.UnmarshalOptions{
+				DiscardUnknown: false,
+			},
+		}
+		gwMux := runtime.NewServeMux(
+			runtime.WithMarshalerOption(runtime.MIMEWildcard, jsonPb),
+			runtime.WithErrorHandler(grpcGatewayErrorHandler),
+			runtime.WithRoutingErrorHandler(grpcGatewayRoutingErrorHandler),
+		)
+		opts := []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}
+		grpcEndpoint := "localhost:" + grpcPort
+{{- range .Resources }}
+		if err := pb.Register{{ .Name }}ServiceHandlerFromEndpoint(ctx, gwMux, grpcEndpoint, opts); err != nil {
+			log.Fatalf("register {{ .Name }} gateway: %v", err)
+		}
+{{- end }}
+		log.Printf("{{ .Project.Name }}-backend HTTP gateway on :%s", httpPort)
+		if err := http.ListenAndServe(":"+httpPort, requestPreprocessor(gwMux)); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("http gateway: %v", err)
 		}
 	}()
 
@@ -98,4 +140,183 @@ func envOrDefault(key, def string) string {
 		return v
 	}
 	return def
+}
+
+func grpcGatewayErrorHandler(ctx context.Context, mux *runtime.ServeMux, m runtime.Marshaler, w http.ResponseWriter, r *http.Request, err error) {
+	st, ok := status.FromError(err)
+	if !ok {
+		runtime.DefaultHTTPErrorHandler(ctx, mux, m, w, r, err)
+		return
+	}
+	httpCode := http.StatusBadRequest
+	switch st.Code() {
+	case codes.NotFound:
+		httpCode = http.StatusNotFound
+	case codes.Internal:
+		httpCode = http.StatusInternalServerError
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(httpCode)
+	resp := map[string]interface{}{
+		"code":    int(st.Code()),
+		"message": st.Message(),
+		"details": []interface{}{},
+	}
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+func grpcGatewayRoutingErrorHandler(ctx context.Context, mux *runtime.ServeMux, m runtime.Marshaler, w http.ResponseWriter, r *http.Request, code int) {
+	w.Header().Set("Content-Type", "application/json")
+	if code == http.StatusNotFound {
+		w.WriteHeader(http.StatusNotFound)
+		resp := map[string]interface{}{
+			"code":    int(codes.NotFound),
+			"message": "Not Found",
+			"details": []interface{}{},
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+		return
+	}
+	w.WriteHeader(http.StatusBadRequest)
+	resp := map[string]interface{}{
+		"code":    int(codes.InvalidArgument),
+		"message": http.StatusText(code),
+		"details": []interface{}{},
+	}
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// refFieldToResType maps inline field names to resource types for binding list requests.
+var refFieldToResType = map[string]string{
+{{- range $res := .Resources }}
+{{- if $res.IsBinding }}
+{{- range $ref := $res.Refs }}
+	"{{ camelCase $ref.Name }}": "{{ $ref.Target }}",
+{{- end }}
+{{- end }}
+{{- end }}
+}
+
+// requestPreprocessor normalizes incoming HTTP JSON for gRPC-gateway compatibility:
+// 1. Lifts output-only fields from spec to top level (UpdIPs, UpdMetaInfo).
+// 2. Converts inline ref objects in fieldSelector to refs array for binding list requests.
+func requestPreprocessor(next http.Handler) http.Handler {
+	type liftRule struct{ from, to string }
+	liftPaths := map[string][]liftRule{
+		"/v2/hosts/upd-ips":      { {`{"IPs", "ips"}`, ""}, {`{"ips", "ips"}`, ""} },
+		"/v2/hosts/upd-metainfo": { {`{"metaInfo", "metaInfo"}`, ""} },
+	}
+	_ = liftPaths
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.Body == nil {
+			next.ServeHTTP(w, r)
+			return
+		}
+		body, err := io.ReadAll(r.Body)
+		r.Body.Close()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if len(body) == 0 {
+			r.Body = io.NopCloser(bytes.NewReader(body))
+			next.ServeHTTP(w, r)
+			return
+		}
+		var raw map[string]interface{}
+		if err := json.Unmarshal(body, &raw); err != nil {
+			r.Body = io.NopCloser(bytes.NewReader(body))
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		modified := false
+
+		if strings.HasSuffix(r.URL.Path, "/list") {
+			modified = normalizeListRequest(raw) || modified
+		}
+		if strings.HasSuffix(r.URL.Path, "/upd-ips") {
+			modified = liftSpecFields(raw, "hosts", []string{"IPs", "ips"}, "ips") || modified
+		}
+		if strings.HasSuffix(r.URL.Path, "/upd-metainfo") {
+			modified = liftSpecFields(raw, "hosts", []string{"metaInfo"}, "metaInfo") || modified
+		}
+
+		if modified {
+			out, _ := json.Marshal(raw)
+			body = out
+		}
+		r.Body = io.NopCloser(bytes.NewReader(body))
+		r.ContentLength = int64(len(body))
+		next.ServeHTTP(w, r)
+	})
+}
+
+func liftSpecFields(raw map[string]interface{}, arrayKey string, specKeys []string, topKey string) bool {
+	arr, _ := raw[arrayKey].([]interface{})
+	modified := false
+	for _, elem := range arr {
+		obj, _ := elem.(map[string]interface{})
+		if obj == nil {
+			continue
+		}
+		spec, _ := obj["spec"].(map[string]interface{})
+		if spec == nil {
+			continue
+		}
+		for _, sk := range specKeys {
+			if v, exists := spec[sk]; exists {
+				if _, already := obj[topKey]; !already {
+					obj[topKey] = v
+					modified = true
+				}
+				delete(spec, sk)
+			}
+		}
+	}
+	return modified
+}
+
+// normalizeListRequest converts inline ref objects in fieldSelector to refs array.
+func normalizeListRequest(raw map[string]interface{}) bool {
+	selectors, _ := raw["selectors"].([]interface{})
+	modified := false
+	for _, sel := range selectors {
+		selMap, _ := sel.(map[string]interface{})
+		if selMap == nil {
+			continue
+		}
+		fs, _ := selMap["fieldSelector"].(map[string]interface{})
+		if fs == nil {
+			continue
+		}
+		var refs []interface{}
+		if existingRefs, ok := fs["refs"]; ok {
+			refs, _ = existingRefs.([]interface{})
+		}
+		for fieldName, resType := range refFieldToResType {
+			if refObj, ok := fs[fieldName]; ok {
+				refMap, _ := refObj.(map[string]interface{})
+				if refMap != nil {
+					ref := map[string]interface{}{
+						"resType": resType,
+					}
+					if n, ok := refMap["name"]; ok {
+						ref["name"] = n
+					}
+					if ns, ok := refMap["namespace"]; ok {
+						ref["namespace"] = ns
+					}
+					refs = append(refs, ref)
+				}
+				delete(fs, fieldName)
+				modified = true
+			}
+		}
+		if len(refs) > 0 {
+			fs["refs"] = refs
+		}
+	}
+	return modified
 }

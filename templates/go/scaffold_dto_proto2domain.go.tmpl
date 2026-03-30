@@ -8,62 +8,70 @@ import (
 // {{ .Res.Name }}SpecFromProto converts spec-specific fields from proto to domain.
 // This file is generated once — customize spec field mapping here.
 func {{ .Res.Name }}SpecFromProto(msg *pb.{{ .Res.Name }}, d *{{ .Project.Name }}.{{ .Res.Name }}) {
-{{- range .Res.Spec.Fields }}
-{{- if eq .GoType "PolicyAction" }}
-	d.Spec.{{ goField .Name }} = {{ $.Project.Name }}.PolicyAction(msg.GetSpec().Get{{ goField .Name }}())
-{{- else if eq .GoType "bool" }}
-	d.Spec.{{ goField .Name }} = msg.GetSpec().Get{{ goField .Name }}()
-{{- else if eq .GoType "IPNet" }}
-	d.Spec.{{ goField .Name }} = {{ $.Project.Name }}.ParseIPNet(msg.GetSpec().Get{{ goField .Name }}())
-{{- else if eq .GoType "DualStackIPs" }}
-	if ips := msg.GetSpec().GetIps(); ips != nil {
-		d.{{ goField .Name }} = {{ $.Project.Name }}.DualStackIPs{
-			IPv4: ips.GetIpv4(),
-			IPv6: ips.GetIpv6(),
+{{- range $field := .Res.Spec.Fields }}
+{{- if eq $field.ConversionKind "passthrough" }}
+	d.Spec.{{ goField $field.Name }} = msg.GetSpec().Get{{ goField $field.Name }}()
+{{- else if eq $field.ConversionKind "string_cast" }}
+	d.Spec.{{ goField $field.Name }} = {{ $.Project.Name }}.{{ $field.GoType }}(msg.GetSpec().Get{{ goField $field.Name }}())
+{{- else if eq $field.ConversionKind "cidr" }}
+	d.Spec.{{ goField $field.Name }} = {{ $.Project.Name }}.ParseIPNet(msg.GetSpec().Get{{ goField $field.Name }}())
+{{- else if eq $field.ConversionKind "jsonb_struct" }}
+{{- if $field.OutputOnly }}
+{{- if and $field.ResolvedType (len $field.ResolvedType.GoFields) }}
+	if src := msg.Get{{ goField $field.Name }}(); src != nil {
+		d.{{ goField $field.Name }} = {{ $.Project.Name }}.{{ $field.GoType }}{
+{{- range $field.ResolvedType.GoFields }}
+			{{ .Name }}: src.Get{{ .ProtoName }}(),
+{{- end }}
 		}
-	}
-{{- else if eq .GoType "HostInfo" }}
-	if mi := msg.GetSpec().GetMetaInfo(); mi != nil {
-		d.{{ goField .Name }} = {{ $.Project.Name }}.HostInfo{
-			HostName:        mi.GetHostName(),
-			OS:              mi.GetOs(),
-			Platform:        mi.GetPlatform(),
-			PlatformFamily:  mi.GetPlatformFamily(),
-			PlatformVersion: mi.GetPlatformVersion(),
-			KernelVersion:   mi.GetKernelVersion(),
-		}
-	}
-{{- else if eq .GoType "TransportSpec" }}
-	for _, t := range msg.GetSpec().GetTransport() {
-		ts := {{ $.Project.Name }}.TransportSpec{
-			Protocol: {{ $.Project.Name }}.Proto(t.GetProtocol()),
-			IPv:      {{ $.Project.Name }}.IPFamily(t.GetIpV()),
-		}
-		for _, e := range t.GetEntries() {
-			te := {{ $.Project.Name }}.TransportEntry{
-				Description: e.GetDescription(),
-				Comment:     e.GetComment(),
-			}
-			switch v := e.GetEntry().(type) {
-			case *pb.TransportEntry_Ports:
-				te.Ports = v.Ports
-			case *pb.TransportEntry_Types:
-				if v.Types != nil {
-					te.Types = make([]int, len(v.Types.GetValues()))
-					for i, val := range v.Types.GetValues() {
-						te.Types[i] = int(val)
-					}
-				}
-			}
-			ts.Entries = append(ts.Entries, te)
-		}
-		d.Spec.Transport = append(d.Spec.Transport, ts)
 	}
 {{- else }}
-	// TODO: map msg field -> d.Spec.{{ goField .Name }}
+	// TODO: map msg.Get{{ goField $field.Name }}() -> d.{{ goField $field.Name }}
+{{- end }}
+{{- else if $field.Repeated }}
+	for _, item := range msg.GetSpec().Get{{ goField $field.Name }}() {
+		d.Spec.{{ goField $field.Name }} = append(d.Spec.{{ goField $field.Name }}, convert{{ $field.ProtoType }}FromProto(item))
+	}
+{{- else }}
+	// TODO: map msg field -> d.Spec.{{ goField $field.Name }}
+{{- end }}
+{{- else }}
+	// TODO: map msg field -> d.Spec.{{ goField $field.Name }}
 {{- end }}
 {{- end }}
 {{- if not (len .Res.Spec.Fields) }}
 	// No spec fields to map.
 {{- end }}
 }
+{{ range $field := .Res.Spec.Fields }}
+{{- if and (eq $field.ConversionKind "jsonb_struct") $field.Repeated (not $field.OutputOnly) $field.ResolvedType }}
+
+func convert{{ $field.ProtoType }}FromProto(item *pb.{{ $field.ProtoType }}) {{ $.Project.Name }}.{{ $field.GoType }} {
+	out := {{ $.Project.Name }}.{{ $field.GoType }}{}
+{{- range $gf := $field.ResolvedType.GoFields }}
+{{- if hasPrefix $gf.Type "[]" }}
+{{- $innerGoType := trimPrefix $gf.Type "[]" }}
+{{- range $ct := $.Types }}
+{{- if eq $ct.Mapping.Go $innerGoType }}
+	for _, sub := range item.Get{{ $gf.ProtoName }}() {
+		domSub := {{ $.Project.Name }}.{{ $ct.Mapping.Go }}{
+{{- range $cf := $ct.GoFields }}
+{{- if hasPrefix $cf.Type "[]" }}
+			{{ $cf.Name }}: sub.Get{{ $cf.ProtoName }}(),
+{{- else }}
+			{{ $cf.Name }}: {{ $.Project.Name }}.{{ $cf.Type }}(sub.Get{{ $cf.ProtoName }}()),
+{{- end }}
+{{- end }}
+		}
+		out.{{ $gf.Name }} = append(out.{{ $gf.Name }}, domSub)
+	}
+{{- end }}
+{{- end }}
+{{- else }}
+	out.{{ $gf.Name }} = {{ $.Project.Name }}.{{ $gf.Type }}(item.Get{{ $gf.ProtoName }}())
+{{- end }}
+{{- end }}
+	return out
+}
+{{- end }}
+{{- end }}

@@ -49,12 +49,63 @@ type CustomType struct {
 	Mapping       TypeMapping // sql/go/proto mapping
 	K8sName       string      // PascalCase K8s type name
 	ProtoName     string      // proto message name
+
+	ProtoMessages []ProtoMessageDef // proto messages this type contributes
+	ProtoEnums    []ProtoEnumDef    // proto enums this type contributes
+	GoFields      []GoFieldDef      // Go struct fields for struct-like types (jsonb)
+	K8sFields     []GoFieldDef      // K8s API struct fields (defaults to GoFields if empty)
+}
+
+// EffectiveK8sFields returns K8sFields if set, otherwise GoFields.
+func (ct *CustomType) EffectiveK8sFields() []GoFieldDef {
+	if len(ct.K8sFields) > 0 {
+		return ct.K8sFields
+	}
+	return ct.GoFields
+}
+
+// GoFieldDef describes a field in a Go domain struct for code generation.
+type GoFieldDef struct {
+	Name      string // Go field name (PascalCase): "IPv4", "HostName"
+	Type      string // Go type: "[]string", "string", "int"
+	JSONName  string // JSON tag name: "IPv4", "hostName"
+	ProtoName string // proto getter suffix: "Ipv4", "HostName"
+	OmitEmpty bool   // json tag omitempty
 }
 
 type TypeField struct {
 	Name       string
 	Type       string
 	OneOfGroup string
+}
+
+// ProtoFieldDef describes a single field inside a proto message definition.
+type ProtoFieldDef struct {
+	Name       string
+	Type       string
+	Number     int
+	Repeated   bool
+	JSONName   string   // optional [json_name = "..."]
+	OneOfGroup string   // if non-empty, field belongs to this oneof group
+}
+
+// ProtoMessageDef describes a proto message that a CustomType maps to.
+type ProtoMessageDef struct {
+	Name       string          // message name (e.g. "DualStackIPs")
+	Fields     []ProtoFieldDef
+	OneOfName  string          // oneof block name (when type has a single oneof)
+}
+
+// ProtoEnumDef describes a proto enum declared by a CustomType.
+type ProtoEnumDef struct {
+	Name   string
+	Values []ProtoEnumValue
+}
+
+// ProtoEnumValue is a single proto enum value.
+type ProtoEnumValue struct {
+	Name   string
+	Number int
 }
 
 // Resource is the central IR node -- one per entity in the system.
@@ -94,6 +145,14 @@ type ResourceSpec struct {
 	Fields []SpecField
 }
 
+// ConversionKind constants for SpecField.
+const (
+	ConvPassthrough  = "passthrough"  // direct assignment (bool, string, int)
+	ConvStringCast   = "string_cast"  // string(d.X) / GoType(s) — enums
+	ConvCIDR         = "cidr"         // IPNet.String() / ParseIPNet(s)
+	ConvJSONBStruct  = "jsonb_struct" // json.Marshal/Unmarshal, proto field mapping
+)
+
 // SpecField describes a field in a resource's spec.
 // Type refers to a name in the types registry (e.g. "policyAction", "cidr", "bool").
 // The parser resolves the type and populates SQLType/GoType/ProtoType from the mapping.
@@ -108,11 +167,13 @@ type SpecField struct {
 	JSONName   string // override JSON field name (e.g. "CIDR", "IPs")
 	Default    string
 	Validate   string
-	Repeated     bool
-	Selector     bool
-	OutputOnly   bool
-	TestSQLValue string   // override SQL value for test data generation
-	EnumValues   []string // populated from enum type values
+	Repeated         bool
+	Selector         bool
+	OutputOnly       bool
+	TestSQLValue     string       // override SQL value for test data generation
+	EnumValues       []string     // populated from enum type values
+	ConversionKind   string       // how to convert between domain/proto/sql
+	ResolvedType     *CustomType  // pointer to resolved CustomType (for struct-like types)
 }
 
 // ColumnName returns the SQL column name (falls back to snake_case of Name).
@@ -181,10 +242,11 @@ type ExtraSyncer struct {
 }
 
 type ExtraGRPCMethod struct {
-	Name     string
-	Scaffold bool
-	HTTPPath string
-	HTTPVerb string
+	Name       string
+	Scaffold   bool
+	HTTPPath   string
+	HTTPVerb   string
+	SyncerName string // name of ExtraSyncer to call (e.g. "HostIPs" → writer.SyncHostIPs)
 }
 
 // K8sSubresource defines an AGL sub-resource (e.g. hosts/{name}/metadata).

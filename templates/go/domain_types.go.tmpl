@@ -3,40 +3,35 @@
 package {{ $.DomainPkg }}
 
 import "net"
+{{ range $t := .Types }}
+{{- if eq $t.Kind "enum" }}
+{{- if not (eq $t.Name "resourceEventType") }}
+
+// {{ $t.Mapping.Go }} is the {{ $t.Name }} enum.
+type {{ $t.Mapping.Go }} string
+
+const (
+{{- range $v := $t.Values }}
+	{{ $t.Mapping.Go }}{{ $v }} {{ $t.Mapping.Go }} = "{{ $v }}"
+{{- end }}
+)
+{{- end }}
+{{- end }}
+{{- end }}
 
 // ResourceEventType represents the type of a watch event.
 type ResourceEventType string
 
 const (
-	EventAdded    ResourceEventType = "ADDED"
-	EventModified ResourceEventType = "MODIFIED"
-	EventDeleted  ResourceEventType = "DELETED"
-	EventInit     ResourceEventType = "INIT"
-)
-
-// Proto is the transport protocol enum.
-type Proto string
-
-const (
-	ProtoTCP  Proto = "TCP"
-	ProtoUDP  Proto = "UDP"
-	ProtoICMP Proto = "ICMP"
-)
-
-// IPFamily represents IPv4/IPv6.
-type IPFamily string
-
-const (
-	IPv4 IPFamily = "IPv4"
-	IPv6 IPFamily = "IPv6"
-)
-
-// PolicyAction is the default action for an address group.
-type PolicyAction string
-
-const (
-	PolicyActionDENY  PolicyAction = "DENY"
-	PolicyActionALLOW PolicyAction = "ALLOW"
+{{- range $t := .Types }}
+{{- if eq $t.Name "resourceEventType" }}
+{{- range $i, $v := $t.Values }}
+{{- if ne $v "UNSPECIFIED" }}
+	Event{{ $v }} ResourceEventType = "{{ $v }}"
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
 )
 
 // IPNet wraps net.IPNet for domain use.
@@ -52,34 +47,18 @@ func ParseIPNet(s string) IPNet {
 	}
 	return IPNet{IPNet: *n}
 }
+{{ range $t := .Types }}
+{{- if and (len $t.GoFields) (ne $t.Kind "enum") }}
 
-// DualStackIPs holds IPv4 and IPv6 addresses.
-type DualStackIPs struct {
-	IPv4 []string `json:"IPv4"`
-	IPv6 []string `json:"IPv6"`
+// {{ $t.Mapping.Go }} holds {{ $t.Name }} data.
+type {{ $t.Mapping.Go }} struct {
+{{- range $f := $t.GoFields }}
+{{- if $f.OmitEmpty }}
+	{{ $f.Name }} {{ $f.Type }} `json:"{{ $f.JSONName }},omitempty"`
+{{- else }}
+	{{ $f.Name }} {{ $f.Type }} `json:"{{ $f.JSONName }}"`
+{{- end }}
+{{- end }}
 }
-
-// HostInfo holds OS/platform metadata for a host.
-type HostInfo struct {
-	HostName        string `json:"hostName"`
-	OS              string `json:"os"`
-	Platform        string `json:"platform"`
-	PlatformFamily  string `json:"platformFamily"`
-	PlatformVersion string `json:"platformVersion"`
-	KernelVersion   string `json:"kernelVersion"`
-}
-
-// TransportEntry represents a single port range or ICMP type set.
-type TransportEntry struct {
-	Description string `json:"description"`
-	Comment     string `json:"comment"`
-	Ports       string `json:"ports,omitempty"`
-	Types       []int  `json:"types,omitempty"`
-}
-
-// TransportSpec describes a protocol + IP family + entries.
-type TransportSpec struct {
-	Protocol Proto            `json:"protocol"`
-	IPv      IPFamily         `json:"IPv"`
-	Entries  []TransportEntry `json:"entries"`
-}
+{{- end }}
+{{- end }}

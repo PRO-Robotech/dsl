@@ -7,7 +7,7 @@ import (
 	pb "{{ $.Module }}/pkg/api/{{ $.Project.Name }}/v1"
 )
 {{ range $ct := .Types }}
-{{- if eq $ct.Kind "composite" }}
+{{- if and (eq $ct.Kind "composite") (len $ct.EffectiveK8sFields) }}
 
 func {{ goField $ct.K8sName }}K8sToProto(src v1alpha1.{{ $ct.K8sName }}) *pb.{{ $ct.ProtoName }} {
 	dst := &pb.{{ $ct.ProtoName }}{
@@ -110,45 +110,64 @@ func {{ goField $ct.K8sName }}ProtoToK8s(src *pb.{{ $ct.ProtoName }}) v1alpha1.{
 }
 {{- end }}
 {{- end }}
+{{ range $ct := .Types }}
+{{- if and (ne $ct.Kind "composite") (ne $ct.Kind "enum") (len $ct.K8sFields) (len $ct.GoFields) }}
 
-func DualStackIPsK8sToProto(src v1alpha1.DualStackIPs) *pb.DualStackIPs {
-	return &pb.DualStackIPs{
-		Ipv4: src.IPv4,
-		Ipv6: src.IPv6,
+func {{ $ct.K8sName }}K8sToProto(src v1alpha1.{{ $ct.K8sName }}) *pb.{{ $ct.ProtoName }} {
+	dst := &pb.{{ $ct.ProtoName }}{
+{{- range $ct.GoFields }}
+{{- if .ProtoName }}
+{{- if not (hasPrefix .Type "[]") }}
+		{{ .ProtoName }}: string(src.{{ .Name }}),
+{{- end }}
+{{- end }}
+{{- end }}
 	}
+{{- range $ct.GoFields }}
+{{- if and .ProtoName (hasPrefix .Type "[]") }}
+{{- $elemType := trimPrefix .Type "[]" }}
+{{- if or (eq $elemType "string") (eq $elemType "int") (eq $elemType "int32") (eq $elemType "int64") (eq $elemType "float64") (eq $elemType "bool") }}
+	dst.{{ .ProtoName }} = src.{{ .Name }}
+{{- else }}
+	for _, item := range src.{{ .Name }} {
+		dst.{{ .ProtoName }} = append(dst.{{ .ProtoName }}, {{ $elemType }}K8sToProto(item))
+	}
+{{- end }}
+{{- end }}
+{{- end }}
+	return dst
 }
 
-func DualStackIPsProtoToK8s(src *pb.DualStackIPs) v1alpha1.DualStackIPs {
+func {{ $ct.K8sName }}ProtoToK8s(src *pb.{{ $ct.ProtoName }}) v1alpha1.{{ $ct.K8sName }} {
 	if src == nil {
-		return v1alpha1.DualStackIPs{}
+		return v1alpha1.{{ $ct.K8sName }}{}
 	}
-	return v1alpha1.DualStackIPs{
-		IPv4: src.GetIpv4(),
-		IPv6: src.GetIpv6(),
+	dst := v1alpha1.{{ $ct.K8sName }}{
+{{- range $ct.GoFields }}
+{{- if .ProtoName }}
+{{- if not (hasPrefix .Type "[]") }}
+{{- if or (eq .Type "string") (eq .Type "int") (eq .Type "int32") (eq .Type "int64") (eq .Type "float64") (eq .Type "bool") }}
+		{{ .Name }}: src.Get{{ .ProtoName }}(),
+{{- else }}
+		{{ .Name }}: v1alpha1.{{ .Type }}(src.Get{{ .ProtoName }}()),
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
 	}
+{{- range $ct.GoFields }}
+{{- if and .ProtoName (hasPrefix .Type "[]") }}
+{{- $elemType := trimPrefix .Type "[]" }}
+{{- if or (eq $elemType "string") (eq $elemType "int") (eq $elemType "int32") (eq $elemType "int64") (eq $elemType "float64") (eq $elemType "bool") }}
+	dst.{{ .Name }} = src.Get{{ .ProtoName }}()
+{{- else }}
+	for _, pbItem := range src.Get{{ .ProtoName }}() {
+		dst.{{ .Name }} = append(dst.{{ .Name }}, {{ $elemType }}ProtoToK8s(pbItem))
+	}
+{{- end }}
+{{- end }}
+{{- end }}
+	return dst
 }
-
-func HostMetaInfoK8sToProto(src v1alpha1.HostMetaInfo) *pb.HostMetaInfo {
-	return &pb.HostMetaInfo{
-		HostName:        src.HostName,
-		Os:              src.OS,
-		Platform:        src.Platform,
-		PlatformFamily:  src.PlatformFamily,
-		PlatformVersion: src.PlatformVersion,
-		KernelVersion:   src.KernelVersion,
-	}
-}
-
-func HostMetaInfoProtoToK8s(src *pb.HostMetaInfo) v1alpha1.HostMetaInfo {
-	if src == nil {
-		return v1alpha1.HostMetaInfo{}
-	}
-	return v1alpha1.HostMetaInfo{
-		HostName:        src.GetHostName(),
-		OS:              src.GetOs(),
-		Platform:        src.GetPlatform(),
-		PlatformFamily:  src.GetPlatformFamily(),
-		PlatformVersion: src.GetPlatformVersion(),
-		KernelVersion:   src.GetKernelVersion(),
-	}
-}
+{{- end }}
+{{- end }}

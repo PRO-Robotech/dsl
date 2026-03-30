@@ -23,11 +23,8 @@ func validateMetadataName(name string) error {
 		return fmt.Errorf("name is required")
 	}
 {{- if .HasRestriction "name" }}
-	if len(name) > restrictionNameMaxLen {
-		return fmt.Errorf("name exceeds max length %d", restrictionNameMaxLen)
-	}
-	if !restrictionNamePattern.MatchString(name) {
-		return fmt.Errorf("name %q does not match required pattern", name)
+	if !restrictionNamePattern.MatchString(name) || len(name) > restrictionNameMaxLen {
+		return fmt.Errorf("must consist of lower-case alphanumeric characters, '-' or '.', must start and end with an alphanumeric character and be no longer than %d characters", restrictionNameMaxLen)
 	}
 {{- end }}
 	return nil
@@ -39,16 +36,16 @@ func validateMetadataUID(uid string) error {
 	}
 {{- if .HasRestriction "uid" }}
 	if !restrictionUidPattern.MatchString(uid) {
-		return fmt.Errorf("uid %q is not a valid UUID", uid)
+		return fmt.Errorf("invalid UUID length: %d", len(uid))
 	}
 {{- end }}
 	return nil
 }
 
 func validateMetadataDisplayName(dn string) error {
-{{- if .HasRestriction "display_name" }}
-	if len(dn) > restrictionDisplay_nameMaxLen {
-		return fmt.Errorf("displayName exceeds max length %d", restrictionDisplay_nameMaxLen)
+{{- if .HasRestriction "displayName" }}
+	if len(dn) > restrictionDisplayNameMaxLen {
+		return fmt.Errorf("DisplayName: display name must be no longer than %d characters", restrictionDisplayNameMaxLen)
 	}
 {{- end }}
 	return nil
@@ -56,17 +53,17 @@ func validateMetadataDisplayName(dn string) error {
 
 func validateMetadataLabels(labels map[string]string) error {
 	for k, v := range labels {
-{{- if .HasRestriction "label_key" }}
-		if len(k) > restrictionLabel_keyMaxLen {
-			return fmt.Errorf("label key %q exceeds max length %d", k, restrictionLabel_keyMaxLen)
+{{- if .HasRestriction "labelKey" }}
+		if len(k) > restrictionLabelKeyMaxLen {
+			return fmt.Errorf("label key %q exceeds max length %d", k, restrictionLabelKeyMaxLen)
 		}
-		if !restrictionLabel_keyPattern.MatchString(k) {
+		if !restrictionLabelKeyPattern.MatchString(k) {
 			return fmt.Errorf("label key %q does not match required pattern", k)
 		}
 {{- end }}
-{{- if .HasRestriction "label_value" }}
-		if len(v) > restrictionLabel_valueMaxLen {
-			return fmt.Errorf("label value for key %q exceeds max length %d", k, restrictionLabel_valueMaxLen)
+{{- if .HasRestriction "labelValue" }}
+		if len(v) > restrictionLabelValueMaxLen {
+			return fmt.Errorf("label value for key %q exceeds max length %d", k, restrictionLabelValueMaxLen)
 		}
 {{- end }}
 		_ = k
@@ -76,20 +73,90 @@ func validateMetadataLabels(labels map[string]string) error {
 }
 
 // ValidateCommonMetadata validates metadata fields common to all resources.
-func ValidateCommonMetadata(name, namespace, uid, displayName string, labels map[string]string) error {
-	if err := validateMetadataName(name); err != nil {
-		return fmt.Errorf("metadata.name: %w", err)
+func ValidateCommonMetadata(name, namespace, uid, displayName string, labels map[string]string, namespaced bool) error {
+	isZeroUID := uid == "" || uid == "00000000-0000-0000-0000-000000000000"
+
+	if name == "" && isZeroUID {
+		if namespaced {
+			return fmt.Errorf("at least one of UID or Name and Namespace must be set")
+		}
+		return fmt.Errorf("at least one of UID or Name must be set")
+	}
+	if namespaced && namespace == "" && isZeroUID {
+		return fmt.Errorf("at least one of UID or Name and Namespace must be set")
+	}
+
+	if !isZeroUID {
+		if err := validateMetadataUID(uid); err != nil {
+			return fmt.Errorf("metadata.uid: %w", err)
+		}
+	}
+
+	if name != "" {
+		if err := validateMetadataName(name); err != nil {
+			return fmt.Errorf("Name: %w", err)
+		}
 	}
 	if namespace != "" {
 		if err := validateMetadataName(namespace); err != nil {
-			return fmt.Errorf("metadata.namespace: %w", err)
+			return fmt.Errorf("Namespace: %w", err)
 		}
 	}
-	if err := validateMetadataUID(uid); err != nil {
-		return fmt.Errorf("metadata.uid: %w", err)
+	if err := validateMetadataDisplayName(displayName); err != nil {
+		return err
+	}
+	if err := validateMetadataLabels(labels); err != nil {
+		return err
+	}
+	return nil
+}
+
+// ValidateUpsertMetadata validates metadata with upsert-specific messages.
+func ValidateUpsertMetadata(name, namespace, uid, displayName string, labels map[string]string, namespaced bool) error {
+	isZeroUID := uid == "" || uid == "00000000-0000-0000-0000-000000000000"
+
+	if namespaced {
+		if name == "" && namespace == "" && isZeroUID {
+			return fmt.Errorf("at least one of UID or Name and Namespace must be set")
+		}
+		if !isZeroUID && name == "" {
+			return fmt.Errorf("set name for both insert (uid=null) and update (uid!=null); set name and namespace; set name for both insert and update")
+		}
+		if !isZeroUID && namespace == "" {
+			return fmt.Errorf("pass existing namespace for both insert and update; at least one of UID or Name and Namespace must be set")
+		}
+		if name != "" && namespace == "" && isZeroUID {
+			return fmt.Errorf("at least one of UID or Name and Namespace must be set")
+		}
+		if name == "" && namespace != "" && isZeroUID {
+			return fmt.Errorf("at least one of UID or Name and Namespace must be set")
+		}
+		if name == "" && isZeroUID {
+			return fmt.Errorf("at least one of UID or Name and Namespace must be set")
+		}
+	} else {
+		if name == "" && isZeroUID {
+			return fmt.Errorf("at least one of UID or Name must be set")
+		}
+	}
+
+	if !isZeroUID {
+		if err := validateMetadataUID(uid); err != nil {
+			return fmt.Errorf("metadata.uid: %w", err)
+		}
+	}
+	if name != "" {
+		if err := validateMetadataName(name); err != nil {
+			return fmt.Errorf("Name: %w", err)
+		}
+	}
+	if namespace != "" {
+		if err := validateMetadataName(namespace); err != nil {
+			return fmt.Errorf("Namespace: %w", err)
+		}
 	}
 	if err := validateMetadataDisplayName(displayName); err != nil {
-		return fmt.Errorf("spec: %w", err)
+		return err
 	}
 	if err := validateMetadataLabels(labels); err != nil {
 		return err
@@ -101,7 +168,7 @@ func ValidateCommonMetadata(name, namespace, uid, displayName string, labels map
 {{- if not .IsComposite }}
 // Validate{{ .Name }}Metadata performs generated validation for {{ .Name }}.
 func Validate{{ .Name }}Metadata(obj *{{ .Name }}) error {
-	return ValidateCommonMetadata(
+	return ValidateUpsertMetadata(
 		obj.Metadata.Name,
 {{- if .IsNamespaced }}
 		obj.Metadata.Namespace,
@@ -111,6 +178,23 @@ func Validate{{ .Name }}Metadata(obj *{{ .Name }}) error {
 		obj.Metadata.UID.String(),
 		obj.Spec.DisplayName,
 		obj.Metadata.Labels,
+		{{ .IsNamespaced }},
+	)
+}
+
+// Validate{{ .Name }}DeleteMetadata validates metadata for a Delete{{ .Name }} request.
+func Validate{{ .Name }}DeleteMetadata(obj *{{ .Name }}) error {
+	return ValidateCommonMetadata(
+		obj.Metadata.Name,
+{{- if .IsNamespaced }}
+		obj.Metadata.Namespace,
+{{- else }}
+		"",
+{{- end }}
+		obj.Metadata.UID.String(),
+		"",
+		nil,
+		{{ .IsNamespaced }},
 	)
 }
 {{ end }}

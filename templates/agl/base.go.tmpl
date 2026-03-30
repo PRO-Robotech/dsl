@@ -46,6 +46,19 @@ var SelectorFields = []string{
 {{- end }}
 }
 
+// SelectorRefFields lists binding ref names that additionally support .name/.namespace sub-selectors.
+var SelectorRefFields = []string{
+{{- range $res := .Resources }}
+{{- if $res.IsBinding }}
+{{- range $res.Refs }}
+{{- if .Selector }}
+	"{{ .Name }}",
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
+}
+
 // SelectionFromOptions extracts name, namespace, labels and spec fields from list options.
 func SelectionFromOptions(ctx context.Context, opts *metainternalversion.ListOptions) Selection {
 	sel := SelectionFromContext(ctx)
@@ -59,6 +72,20 @@ func SelectionFromOptions(ctx context.Context, opts *metainternalversion.ListOpt
 					sel.SpecFields = make(map[string]string)
 				}
 				sel.SpecFields[f] = val
+			}
+		}
+		for _, rf := range SelectorRefFields {
+			if val, ok := opts.FieldSelector.RequiresExactMatch("spec." + rf + ".name"); ok {
+				if sel.SpecFields == nil {
+					sel.SpecFields = make(map[string]string)
+				}
+				sel.SpecFields[rf+".name"] = val
+			}
+			if val, ok := opts.FieldSelector.RequiresExactMatch("spec." + rf + ".namespace"); ok {
+				if sel.SpecFields == nil {
+					sel.SpecFields = make(map[string]string)
+				}
+				sel.SpecFields[rf+".namespace"] = val
 			}
 		}
 	}

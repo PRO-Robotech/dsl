@@ -8,56 +8,67 @@ import (
 // {{ .Res.Name }}SpecToProto converts spec-specific fields from domain to proto.
 // This file is generated once — customize spec field mapping here.
 func {{ .Res.Name }}SpecToProto(d {{ .Project.Name }}.{{ .Res.Name }}, msg *pb.{{ .Res.Name }}) {
-{{- range .Res.Spec.Fields }}
-{{- if eq .GoType "PolicyAction" }}
-	msg.Spec.{{ goField .Name }} = string(d.Spec.{{ goField .Name }})
-{{- else if eq .GoType "bool" }}
-	msg.Spec.{{ goField .Name }} = d.Spec.{{ goField .Name }}
-{{- else if eq .GoType "IPNet" }}
-	msg.Spec.{{ goField .Name }} = d.Spec.{{ goField .Name }}.String()
-{{- else if eq .GoType "DualStackIPs" }}
-	msg.Spec.Ips = &pb.DualStackIPs{
-		Ipv4: d.{{ goField .Name }}.IPv4,
-		Ipv6: d.{{ goField .Name }}.IPv6,
-	}
-{{- else if eq .GoType "HostInfo" }}
-	msg.Spec.MetaInfo = &pb.HostMetaInfo{
-		HostName:        d.{{ goField .Name }}.HostName,
-		Os:              d.{{ goField .Name }}.OS,
-		Platform:        d.{{ goField .Name }}.Platform,
-		PlatformFamily:  d.{{ goField .Name }}.PlatformFamily,
-		PlatformVersion: d.{{ goField .Name }}.PlatformVersion,
-		KernelVersion:   d.{{ goField .Name }}.KernelVersion,
-	}
-{{- else if eq .GoType "TransportSpec" }}
-	for _, tr := range d.Spec.Transport {
-		t := &pb.Transport{
-			Protocol: string(tr.Protocol),
-			IpV:      string(tr.IPv),
-		}
-		for _, e := range tr.Entries {
-			entry := &pb.TransportEntry{
-				Description: e.Description,
-				Comment:     e.Comment,
-			}
-			if e.Ports != "" {
-				entry.Entry = &pb.TransportEntry_Ports{Ports: e.Ports}
-			} else if len(e.Types) > 0 {
-				vals := make([]int32, len(e.Types))
-				for i, v := range e.Types {
-					vals[i] = int32(v)
-				}
-				entry.Entry = &pb.TransportEntry_Types{Types: &pb.ICMPTypes{Values: vals}}
-			}
-			t.Entries = append(t.Entries, entry)
-		}
-		msg.Spec.Transport = append(msg.Spec.Transport, t)
+{{- range $field := .Res.Spec.Fields }}
+{{- if eq $field.ConversionKind "passthrough" }}
+	msg.Spec.{{ goField $field.Name }} = d.Spec.{{ goField $field.Name }}
+{{- else if eq $field.ConversionKind "string_cast" }}
+	msg.Spec.{{ goField $field.Name }} = string(d.Spec.{{ goField $field.Name }})
+{{- else if eq $field.ConversionKind "cidr" }}
+	msg.Spec.{{ goField $field.Name }} = d.Spec.{{ goField $field.Name }}.String()
+{{- else if eq $field.ConversionKind "jsonb_struct" }}
+{{- if $field.OutputOnly }}
+{{- if and $field.ResolvedType (len $field.ResolvedType.GoFields) }}
+	msg.{{ goField $field.Name }} = &pb.{{ $field.ProtoType }}{
+{{- range $field.ResolvedType.GoFields }}
+		{{ .ProtoName }}: d.{{ goField $field.Name }}.{{ .Name }},
+{{- end }}
 	}
 {{- else }}
-	// TODO: map d.Spec.{{ goField .Name }} -> msg.Spec.{{ goField .Name }}
+	// TODO: map d.{{ goField $field.Name }} -> msg.{{ goField $field.Name }}
+{{- end }}
+{{- else if $field.Repeated }}
+	for _, item := range d.Spec.{{ goField $field.Name }} {
+		msg.Spec.{{ goField $field.Name }} = append(msg.Spec.{{ goField $field.Name }}, convert{{ $field.ProtoType }}ToProto(item))
+	}
+{{- else }}
+	// TODO: map d.Spec.{{ goField $field.Name }} -> msg.Spec.{{ goField $field.Name }}
+{{- end }}
+{{- else }}
+	// TODO: map d.Spec.{{ goField $field.Name }} -> msg.Spec.{{ goField $field.Name }}
 {{- end }}
 {{- end }}
 {{- if not (len .Res.Spec.Fields) }}
 	// No spec fields to map.
 {{- end }}
 }
+{{ range $field := .Res.Spec.Fields }}
+{{- if and (eq $field.ConversionKind "jsonb_struct") $field.Repeated (not $field.OutputOnly) $field.ResolvedType }}
+
+func convert{{ $field.ProtoType }}ToProto(item {{ $.Project.Name }}.{{ $field.GoType }}) *pb.{{ $field.ProtoType }} {
+	out := &pb.{{ $field.ProtoType }}{}
+{{- range $gf := $field.ResolvedType.GoFields }}
+{{- if hasPrefix $gf.Type "[]" }}
+{{- $innerGoType := trimPrefix $gf.Type "[]" }}
+{{- range $ct := $.Types }}
+{{- if eq $ct.Mapping.Go $innerGoType }}
+	for _, sub := range item.{{ $gf.Name }} {
+		pbSub := &pb.{{ $ct.ProtoName }}{}
+{{- range $cf := $ct.GoFields }}
+{{- if hasPrefix $cf.Type "[]" }}
+		pbSub.{{ $cf.ProtoName }} = sub.{{ $cf.Name }}
+{{- else }}
+		pbSub.{{ $cf.ProtoName }} = string(sub.{{ $cf.Name }})
+{{- end }}
+{{- end }}
+		out.{{ $gf.ProtoName }} = append(out.{{ $gf.ProtoName }}, pbSub)
+	}
+{{- end }}
+{{- end }}
+{{- else }}
+	out.{{ $gf.ProtoName }} = string(item.{{ $gf.Name }})
+{{- end }}
+{{- end }}
+	return out
+}
+{{- end }}
+{{- end }}

@@ -5,10 +5,59 @@ package {{ lower .Res.Name }}
 import (
 	"context"
 
+	{{ .Project.Name }} "{{ .Module }}/internal/shared/domains/{{ .Project.Name }}"
 	pb "{{ .Module }}/pkg/api/{{ .Project.Name }}/v1"
 	"{{ .Module }}/internal/sg-server/transport/grpc/service/{{ lower .Res.Name }}/dto"
 	"{{ .Module }}/internal/sg-server/repository"
 )
+
+func selectorToOpts(sel *pb.ResSelector) []repository.ListOption {
+	var opts []repository.ListOption
+	if fs := sel.GetFieldSelector(); fs != nil {
+		if fs.GetName() != "" {
+			opts = append(opts, repository.WithName(fs.GetName()))
+		}
+		if fs.GetNamespace() != "" {
+			opts = append(opts, repository.WithNamespace(fs.GetNamespace()))
+		}
+		for k, v := range fs.GetSpecFields() {
+			opts = append(opts, repository.WithSpecField(k, v))
+		}
+		for _, ref := range fs.GetRefs() {
+			rt := ref.GetResType()
+			rn := ref.GetName()
+			rns := ref.GetNamespace()
+			refKey := refTypeToSpecKey(rt)
+			if refKey != "" {
+				if rn != "" {
+					opts = append(opts, repository.WithSpecField(refKey+".name", rn))
+				}
+				if rns != "" {
+					opts = append(opts, repository.WithSpecField(refKey+".namespace", rns))
+				}
+				if rn == "" && rns == "" {
+					opts = append(opts, repository.WithSpecField(refKey, ""))
+				}
+			}
+		}
+	}
+	for k, v := range sel.GetLabelSelector() {
+		opts = append(opts, repository.WithLabel(k, v))
+	}
+	return opts
+}
+
+func refTypeToSpecKey(resType string) string {
+{{- if .Res.IsBinding }}
+	switch resType {
+{{- range .Res.Refs }}
+	case "{{ .Target }}":
+		return "{{ .Name }}"
+{{- end }}
+	}
+{{- end }}
+	return ""
+}
 
 // List{{ .Res.Name }}s handles the List RPC for {{ .Res.Name }}.
 func (s *Service{{ .Res.Name }}) List{{ .Res.Name }}s(
@@ -16,32 +65,50 @@ func (s *Service{{ .Res.Name }}) List{{ .Res.Name }}s(
 	req *pb.{{ .Res.Name }}Req_List,
 ) (*pb.{{ .Res.Name }}Resp_List, error) {
 	reader := s.repo.Reader(ctx)
-	var opts []repository.ListOption
-	for _, sel := range req.GetSelectors() {
-		if fs := sel.GetFieldSelector(); fs != nil {
-			if fs.GetName() != "" {
-				opts = append(opts, repository.WithName(fs.GetName()))
-			}
-			if fs.GetNamespace() != "" {
-				opts = append(opts, repository.WithNamespace(fs.GetNamespace()))
-			}
-			for k, v := range fs.GetSpecFields() {
-				opts = append(opts, repository.WithSpecField(k, v))
+	selectors := req.GetSelectors()
+
+	if len(selectors) <= 1 {
+		var opts []repository.ListOption
+		if len(selectors) == 1 {
+			opts = selectorToOpts(selectors[0])
+		}
+		items, err := reader.List{{ .Res.Name }}s(ctx, opts...)
+		if err != nil {
+			return nil, err
+		}
+		return build{{ .Res.Name }}ListResp(items), nil
+	}
+
+	seen := make(map[string]bool)
+	var all []{{ .Project.Name }}.{{ .Res.Name }}
+	for _, sel := range selectors {
+		opts := selectorToOpts(sel)
+		items, err := reader.List{{ .Res.Name }}s(ctx, opts...)
+		if err != nil {
+			return nil, err
+		}
+		for _, item := range items {
+			key := item.Metadata.UID.String()
+			if !seen[key] {
+				seen[key] = true
+				all = append(all, item)
 			}
 		}
-		for k, v := range sel.GetLabelSelector() {
-			opts = append(opts, repository.WithLabel(k, v))
-		}
 	}
-	items, err := reader.List{{ .Res.Name }}s(ctx, opts...)
-	if err != nil {
-		return nil, err
-	}
+	return build{{ .Res.Name }}ListResp(all), nil
+}
+
+func build{{ .Res.Name }}ListResp(items []{{ .Project.Name }}.{{ .Res.Name }}) *pb.{{ .Res.Name }}Resp_List {
 	pbItems := make([]*pb.{{ .Res.Name }}, 0, len(items))
+	var maxRV int64
 	for _, item := range items {
 		pbItems = append(pbItems, dto.{{ .Res.Name }}ToProto(item))
+		if item.Metadata.ResourceVersion > maxRV {
+			maxRV = item.Metadata.ResourceVersion
+		}
 	}
 	return &pb.{{ .Res.Name }}Resp_List{
+		ResourceVersion: maxRV,
 		{{ resGoPlural .Res.Name }}: pbItems,
-	}, nil
+	}
 }

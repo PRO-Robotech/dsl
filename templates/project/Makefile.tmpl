@@ -61,6 +61,7 @@ PROTO_INCLUDE    := -I $(PROTO_SRC)
 proto:
 	protoc --go_out=. --go_opt=module=$(MODULE) \
 	       --go-grpc_out=. --go-grpc_opt=module=$(MODULE) \
+	       --grpc-gateway_out=. --grpc-gateway_opt=module=$(MODULE),logtostderr=true \
 	       $(PROTO_INCLUDE) \
 	       $(PROTO_SRC)/{{ .Project.Name }}/v1/*.proto
 

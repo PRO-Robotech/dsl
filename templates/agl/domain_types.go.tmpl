@@ -6,117 +6,137 @@ import (
 	"k8s.io/kube-openapi/pkg/common"
 	"k8s.io/kube-openapi/pkg/validation/spec"
 )
+{{ range $t := .Types }}
+{{- if eq $t.Kind "enum" }}
 
-// Action represents a policy action (ALLOW/DENY).
+// {{ $t.K8sName }} represents a {{ $t.Name }} value.
 // +enum
-type Action string
+type {{ $t.K8sName }} string
 
 const (
-	ActionALLOW Action = "ALLOW"
-	ActionDENY  Action = "DENY"
+{{- range $v := $t.Values }}
+	{{ $t.K8sName }}{{ $v }} {{ $t.K8sName }} = "{{ $v }}"
+{{- end }}
 )
+{{- end }}
+{{- end }}
+{{ range $t := .Types }}
+{{- if and (len $t.EffectiveK8sFields) (ne $t.Kind "enum") }}
 
-// DualStackIPs holds IPv4 and IPv6 addresses.
-type DualStackIPs struct {
-	IPv4 []string `json:"IPv4,omitempty"`
-	IPv6 []string `json:"IPv6,omitempty"`
+// {{ $t.K8sName }} holds {{ $t.Name }} data.
+type {{ $t.K8sName }} struct {
+{{- range $f := $t.EffectiveK8sFields }}
+{{- if $f.OmitEmpty }}
+	{{ $f.Name }} {{ $f.Type }} `json:"{{ $f.JSONName }},omitempty"`
+{{- else }}
+	{{ $f.Name }} {{ $f.Type }} `json:"{{ $f.JSONName }}"`
+{{- end }}
+{{- end }}
 }
+{{- end }}
+{{- end }}
+{{ range $t := .Types }}
+{{- if eq $t.Kind "composite" }}
+{{- if $t.OneOfBy }}
 
-// HostMetaInfo holds OS/platform metadata for a host.
-type HostMetaInfo struct {
-	HostName        string `json:"hostName,omitempty"`
-	OS              string `json:"os,omitempty"`
-	Platform        string `json:"platform,omitempty"`
-	PlatformFamily  string `json:"platformFamily,omitempty"`
-	PlatformVersion string `json:"platformVersion,omitempty"`
-	KernelVersion   string `json:"kernelVersion,omitempty"`
-}
-
-// Transport describes protocol-specific transport configuration.
-type Transport struct {
-	Protocol string           `json:"protocol"`
-	IpV      string           `json:"ipV"`
-	Entries  []TransportEntry `json:"entries,omitempty"`
-}
-
-// TransportEntry represents a single entry — either port-based (TCP/UDP) or type-based (ICMP).
-// The discriminator is the parent Transport.Protocol field.
-type TransportEntry struct {
-	Description string `json:"description,omitempty"`
-	Comment     string `json:"comment,omitempty"`
-
-	// Ports is used when protocol is TCP or UDP.
-	// +optional
-	Ports string `json:"ports,omitempty"`
-
-	// Types is used when protocol is ICMP.
-	// +optional
-	Types []int `json:"types,omitempty"`
-}
-
-// OpenAPIV3OneOfTypes implements oneOf for TransportEntry in OpenAPI v3.
-// Returns two schemas: TCP/UDP entry (with ports) and ICMP entry (with types).
-func (TransportEntry) OpenAPIV3OneOfTypes() []string {
-	return []string{"TransportEntryPorts", "TransportEntryTypes"}
-}
-
-// TransportEntryPorts is the TCP/UDP variant of TransportEntry (for OpenAPI oneOf).
-type TransportEntryPorts struct {
-	Description string `json:"description,omitempty"`
-	Comment     string `json:"comment,omitempty"`
-	Ports       string `json:"ports"`
-}
-
-// TransportEntryTypes is the ICMP variant of TransportEntry (for OpenAPI oneOf).
-type TransportEntryTypes struct {
-	Description string `json:"description,omitempty"`
-	Comment     string `json:"comment,omitempty"`
-	Types       []int  `json:"types"`
-}
-
-// OpenAPIV3TransportEntryOneOf returns OpenAPI v3 definition with oneOf.
-func OpenAPIV3TransportEntryOneOf(_ common.ReferenceCallback) common.OpenAPIDefinition {
-	portsProps := spec.Schema{
-		SchemaProps: spec.SchemaProps{
-			Type: []string{"object"},
-			Properties: map[string]spec.Schema{
-				"description": {SchemaProps: spec.SchemaProps{Type: []string{"string"}}},
-				"comment":     {SchemaProps: spec.SchemaProps{Type: []string{"string"}}},
-				"ports":       {SchemaProps: spec.SchemaProps{Type: []string{"string"}}},
-			},
-			Required: []string{"ports"},
-		},
+// OpenAPIV3OneOfTypes implements oneOf for {{ $t.K8sName }} in OpenAPI v3.
+func ({{ $t.K8sName }}) OpenAPIV3OneOfTypes() []string {
+	return []string{
+{{- range $group, $_ := $t.OneOfVariants }}
+		"{{ $t.K8sName }}{{ goField $group }}",
+{{- end }}
 	}
-	typesProps := spec.Schema{
+}
+{{- range $group, $_ := $t.OneOfVariants }}
+
+// {{ $t.K8sName }}{{ goField $group }} is the {{ $group }} variant of {{ $t.K8sName }} (for OpenAPI oneOf).
+type {{ $t.K8sName }}{{ goField $group }} struct {
+{{- range $f := $t.EffectiveK8sFields }}
+{{- $isOneOf := false }}
+{{- range $cf := $t.Fields }}
+{{- if and (eq $cf.Name $f.JSONName) (ne $cf.OneOfGroup "") }}
+{{- $isOneOf = true }}
+{{- end }}
+{{- end }}
+{{- if not $isOneOf }}
+	{{ $f.Name }} {{ $f.Type }} `json:"{{ $f.JSONName }},omitempty"`
+{{- end }}
+{{- end }}
+{{- range $f := $t.EffectiveK8sFields }}
+{{- range $cf := $t.Fields }}
+{{- if eq $cf.OneOfGroup $group }}
+{{- if eq $cf.Name $f.JSONName }}
+	{{ $f.Name }} {{ $f.Type }} `json:"{{ $f.JSONName }}"`
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
+}
+{{- end }}
+
+// OpenAPIV3{{ $t.K8sName }}OneOf returns OpenAPI v3 definition with oneOf.
+func OpenAPIV3{{ $t.K8sName }}OneOf(_ common.ReferenceCallback) common.OpenAPIDefinition {
+{{- range $group, $_ := $t.OneOfVariants }}
+	{{ $group }}Props := spec.Schema{
 		SchemaProps: spec.SchemaProps{
 			Type: []string{"object"},
 			Properties: map[string]spec.Schema{
-				"description": {SchemaProps: spec.SchemaProps{Type: []string{"string"}}},
-				"comment":     {SchemaProps: spec.SchemaProps{Type: []string{"string"}}},
-				"types": {SchemaProps: spec.SchemaProps{
+{{- range $f := $t.EffectiveK8sFields }}
+{{- if not $f.OmitEmpty }}
+				"{{ $f.JSONName }}": {SchemaProps: spec.SchemaProps{Type: []string{"string"}}},
+{{- end }}
+{{- end }}
+{{- range $f := $t.EffectiveK8sFields }}
+{{- if $f.OmitEmpty }}
+{{- range $cf := $t.Fields }}
+{{- if eq $cf.OneOfGroup $group }}
+{{- if eq $cf.Name $f.JSONName }}
+{{- if hasPrefix $f.Type "[]" }}
+				"{{ $f.JSONName }}": {SchemaProps: spec.SchemaProps{
 					Type:  []string{"array"},
 					Items: &spec.SchemaOrArray{Schema: &spec.Schema{SchemaProps: spec.SchemaProps{Type: []string{"integer"}}}},
 				}},
 			},
-			Required: []string{"types"},
+			Required: []string{"{{ $f.JSONName }}"},
+{{- else }}
+				"{{ $f.JSONName }}": {SchemaProps: spec.SchemaProps{Type: []string{"string"}}},
+			},
+			Required: []string{"{{ $f.JSONName }}"},
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
 		},
 	}
+{{- end }}
 
 	return common.OpenAPIDefinition{
 		Schema: spec.Schema{
 			SchemaProps: spec.SchemaProps{
-				Description: "TransportEntry: oneOf ports (TCP/UDP) or types (ICMP)",
-				OneOf:       []spec.Schema{portsProps, typesProps},
+				Description: "{{ $t.K8sName }}: oneOf variants",
+				OneOf: []spec.Schema{
+{{- range $group, $_ := $t.OneOfVariants }}
+					{{ $group }}Props,
+{{- end }}
+				},
 				Properties: map[string]spec.Schema{
-					"description": {SchemaProps: spec.SchemaProps{Type: []string{"string"}}},
-					"comment":     {SchemaProps: spec.SchemaProps{Type: []string{"string"}}},
-					"ports":       {SchemaProps: spec.SchemaProps{Type: []string{"string"}}},
-					"types": {SchemaProps: spec.SchemaProps{
+{{- range $f := $t.EffectiveK8sFields }}
+{{- if hasPrefix $f.Type "[]" }}
+					"{{ $f.JSONName }}": {SchemaProps: spec.SchemaProps{
 						Type:  []string{"array"},
 						Items: &spec.SchemaOrArray{Schema: &spec.Schema{SchemaProps: spec.SchemaProps{Type: []string{"integer"}}}},
 					}},
+{{- else }}
+					"{{ $f.JSONName }}": {SchemaProps: spec.SchemaProps{Type: []string{"string"}}},
+{{- end }}
+{{- end }}
 				},
 			},
 		},
 	}
 }
+{{- end }}
+{{- end }}
+{{- end }}

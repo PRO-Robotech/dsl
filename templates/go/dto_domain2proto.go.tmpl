@@ -45,6 +45,9 @@ func {{ .Res.Name }}ToProto(d {{ .Project.Name }}.{{ .Res.Name }}) *pb.{{ .Res.N
 		})
 	}
 {{- end }}
+{{- if .Res.HasBindingRev }}
+	msg.BindingRev = int32(d.BindingRev)
+{{- end }}
 	{{ .Res.Name }}SpecToProto(d, msg)
 	return msg
 }

@@ -9,18 +9,21 @@ import (
 )
 
 type ProtoField struct {
-	Name     string
-	Type     string
-	Number   int
-	IsMap    bool
-	MapKey   string
-	MapValue string
+	Name       string
+	Type       string
+	Number     int
+	IsMap      bool
+	MapKey     string
+	MapValue   string
+	JSONName   string
+	OutputOnly bool
 }
 
 type ProtoResource struct {
 	ir.Resource
-	SpecFields []ProtoField
-	RefFields  []ProtoField
+	SpecFields      []ProtoField
+	TopLevelFields  []ProtoField
+	RefFields       []ProtoField
 }
 
 type ProtoCompositeResource struct {
@@ -37,6 +40,8 @@ type ProtoExtraMethod struct {
 type protoTemplateData struct {
 	Module             string
 	Project            ir.ProjectConfig
+	CustomMessages     []ir.ProtoMessageDef
+	CustomEnums        []ir.ProtoEnumDef
 	Resources          []ProtoResource
 	CompositeResources []ProtoCompositeResource
 	ExtraMethods       []ProtoExtraMethod
@@ -46,6 +51,11 @@ func (g *Generator) buildProtoData() protoTemplateData {
 	data := protoTemplateData{
 		Module:  g.Schema.Module,
 		Project: g.Schema.Project,
+	}
+
+	for _, ct := range g.Schema.Types {
+		data.CustomMessages = append(data.CustomMessages, ct.ProtoMessages...)
+		data.CustomEnums = append(data.CustomEnums, ct.ProtoEnums...)
 	}
 
 	for i := range g.Schema.Resources {
@@ -59,15 +69,16 @@ func (g *Generator) buildProtoData() protoTemplateData {
 		}
 
 		pr := ProtoResource{Resource: *res}
-		fieldNum := 10
+		specFieldNum := 10
+		topFieldNum := 100
 
 		for _, ref := range res.Refs {
 			pr.RefFields = append(pr.RefFields, ProtoField{
 				Name:   toSnakeCase(ref.Name),
 				Type:   "string",
-				Number: fieldNum,
+				Number: specFieldNum,
 			})
-			fieldNum++
+			specFieldNum++
 		}
 
 		for _, f := range res.Spec.Fields {
@@ -75,15 +86,34 @@ func (g *Generator) buildProtoData() protoTemplateData {
 			if pt == "" {
 				pt = "string"
 			}
-			if f.Repeated {
-				pt = "repeated " + pt
+			pf := ProtoField{
+				Name:       toSnakeCase(f.Name),
+				Type:       pt,
+				JSONName:   f.JSONName,
+				OutputOnly: f.OutputOnly,
 			}
-			pr.SpecFields = append(pr.SpecFields, ProtoField{
-				Name:   toSnakeCase(f.Name),
-				Type:   pt,
-				Number: fieldNum,
+			if f.Repeated {
+				pf.Type = "repeated " + pt
+			}
+			if f.OutputOnly {
+				pf.Number = topFieldNum
+				pf.JSONName = ""
+				topFieldNum++
+				pr.TopLevelFields = append(pr.TopLevelFields, pf)
+			} else {
+				pf.Number = specFieldNum
+				specFieldNum++
+				pr.SpecFields = append(pr.SpecFields, pf)
+			}
+		}
+
+		if res.HasBindingRev {
+			pr.TopLevelFields = append(pr.TopLevelFields, ProtoField{
+				Name:   "binding_rev",
+				Type:   "int32",
+				Number: topFieldNum,
 			})
-			fieldNum++
+			topFieldNum++
 		}
 
 		data.Resources = append(data.Resources, pr)

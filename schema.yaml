@@ -23,7 +23,7 @@ restrictions:
     pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
     description: "UUID v4"
   displayName:
-    maxLength: 256
+    maxLength: 63
     description: "human-readable display name"
   labelKey:
     maxLength: 63
@@ -36,6 +36,7 @@ types:
   policyAction:
     kind: enum
     values: [DENY, ALLOW]
+    k8sName: Action
     mapping:
       go: PolicyAction
       proto: string
@@ -56,6 +57,7 @@ types:
 
   ipFamily:
     kind: enum
+    k8sName: IPFamily
     values: [IPv4, IPv6]
     mapping:
       go: IPFamily
@@ -63,6 +65,7 @@ types:
 
   cidr:
     kind: scalar
+    k8sName: string
     mapping:
       sql: cidr
       go: IPNet
@@ -75,6 +78,17 @@ types:
       sql: jsonb
       go: DualStackIPs
       proto: DualStackIPs
+    goFields:
+      - { name: IPv4, type: "[]string", jsonName: "IPv4", protoName: Ipv4 }
+      - { name: IPv6, type: "[]string", jsonName: "IPv6", protoName: Ipv6 }
+    k8sFields:
+      - { name: IPv4, type: "[]string", jsonName: "IPv4", omitEmpty: true }
+      - { name: IPv6, type: "[]string", jsonName: "IPv6", omitEmpty: true }
+    protoMessages:
+      - name: DualStackIPs
+        fields:
+          - { name: ipv4, type: string, number: 1, repeated: true, jsonName: "IPv4" }
+          - { name: ipv6, type: string, number: 2, repeated: true, jsonName: "IPv6" }
 
   hostInfo:
     kind: scalar
@@ -83,13 +97,39 @@ types:
       sql: jsonb
       go: HostInfo
       proto: HostMetaInfo
+    goFields:
+      - { name: HostName, type: string, jsonName: "hostName", protoName: HostName }
+      - { name: OS, type: string, jsonName: "os", protoName: Os }
+      - { name: Platform, type: string, jsonName: "platform", protoName: Platform }
+      - { name: PlatformFamily, type: string, jsonName: "platformFamily", protoName: PlatformFamily }
+      - { name: PlatformVersion, type: string, jsonName: "platformVersion", protoName: PlatformVersion }
+      - { name: KernelVersion, type: string, jsonName: "kernelVersion", protoName: KernelVersion }
+    k8sFields:
+      - { name: HostName, type: string, jsonName: "hostName", omitEmpty: true }
+      - { name: OS, type: string, jsonName: "os", omitEmpty: true }
+      - { name: Platform, type: string, jsonName: "platform", omitEmpty: true }
+      - { name: PlatformFamily, type: string, jsonName: "platformFamily", omitEmpty: true }
+      - { name: PlatformVersion, type: string, jsonName: "platformVersion", omitEmpty: true }
+      - { name: KernelVersion, type: string, jsonName: "kernelVersion", omitEmpty: true }
+    protoMessages:
+      - name: HostMetaInfo
+        fields:
+          - { name: host_name, type: string, number: 1 }
+          - { name: os, type: string, number: 2 }
+          - { name: platform, type: string, number: 3 }
+          - { name: platform_family, type: string, number: 4 }
+          - { name: platform_version, type: string, number: 5 }
+          - { name: kernel_version, type: string, number: 6 }
 
-  transportSpec:
+  icmpTypes:
     kind: scalar
     mapping:
-      sql: jsonb
-      go: TransportSpec
-      proto: Transport
+      go: ICMPTypes
+      proto: ICMPTypes
+    protoMessages:
+      - name: ICMPTypes
+        fields:
+          - { name: values, type: int32, number: 1, repeated: true }
 
   transportEntry:
     kind: composite
@@ -102,6 +142,49 @@ types:
       - { name: comment, type: text }
       - { name: ports, type: portRanges, oneofGroup: tcpUdp }
       - { name: types, type: "integer[]", oneofGroup: icmp }
+    mapping:
+      go: TransportEntry
+      proto: TransportEntry
+    goFields:
+      - { name: Description, type: string, jsonName: "description", protoName: Description }
+      - { name: Comment, type: string, jsonName: "comment", protoName: Comment }
+      - { name: Ports, type: string, jsonName: "ports", protoName: Ports, omitEmpty: true }
+      - { name: Types, type: "[]int", jsonName: "types", protoName: Types, omitEmpty: true }
+    k8sFields:
+      - { name: Description, type: string, jsonName: "description", omitEmpty: true }
+      - { name: Comment, type: string, jsonName: "comment", omitEmpty: true }
+      - { name: Ports, type: string, jsonName: "ports", omitEmpty: true }
+      - { name: Types, type: "[]int", jsonName: "types", omitEmpty: true }
+    protoMessages:
+      - name: TransportEntry
+        oneofName: entry
+        fields:
+          - { name: description, type: string, number: 1 }
+          - { name: comment, type: string, number: 2 }
+          - { name: ports, type: string, number: 3, oneofGroup: entry }
+          - { name: types, type: ICMPTypes, number: 4, oneofGroup: entry }
+
+  transportSpec:
+    kind: scalar
+    k8sName: Transport
+    mapping:
+      sql: jsonb
+      go: TransportSpec
+      proto: Transport
+    goFields:
+      - { name: Protocol, type: Proto, jsonName: "protocol", protoName: Protocol }
+      - { name: IPv, type: IPFamily, jsonName: "IPv", protoName: IpV }
+      - { name: Entries, type: "[]TransportEntry", jsonName: "entries", protoName: Entries }
+    k8sFields:
+      - { name: Protocol, type: Proto, jsonName: "protocol", protoName: Protocol }
+      - { name: IPv, type: IPFamily, jsonName: "IPv", protoName: IpV }
+      - { name: Entries, type: "[]TransportEntry", jsonName: "entries", protoName: Entries }
+    protoMessages:
+      - name: Transport
+        fields:
+          - { name: protocol, type: string, number: 1 }
+          - { name: ip_v, type: string, number: 2, jsonName: "IPv" }
+          - { name: entries, type: TransportEntry, number: 3, repeated: true }
 
   transport:
     kind: composite
@@ -109,6 +192,21 @@ types:
       - { name: protocol, type: proto }
       - { name: ipV, type: ipFamily }
       - { name: entries, type: "transportEntry[]" }
+
+  resourceEventType:
+    kind: enum
+    values: [UNSPECIFIED, ADDED, MODIFIED, DELETED, INIT]
+    mapping:
+      go: ResourceEventType
+      proto: ResourceEventType
+    protoEnums:
+      - name: ResourceEventType
+        values:
+          - { name: RESOURCE_EVENT_TYPE_UNSPECIFIED, number: 0 }
+          - { name: ADDED, number: 1 }
+          - { name: MODIFIED, number: 2 }
+          - { name: DELETED, number: 3 }
+          - { name: INIT, number: 4 }
 
 # ─── Resources ────────────────────────────────────────────────
 resources:
@@ -193,12 +291,14 @@ resources:
     extraGrpcMethods:
       - name: UpdIPs
         scaffold: true
-        httpPath: upd-iplist
+        httpPath: upd-ips
         httpVerb: POST
+        syncerName: HostIPs
       - name: UpdMetaInfo
         scaffold: true
         httpPath: upd-metainfo
         httpVerb: POST
+        syncerName: HostInfo
     k8sSubresources:
       - name: ips
         specField: ips

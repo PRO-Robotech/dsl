@@ -75,9 +75,8 @@ func (s *{{ .Name }}Storage) Update(ctx context.Context, name string, objInfo re
 	parentProto := convert.ObjectMetaToProto(sub.ObjectMeta)
 	protoObj := &pb.{{ $.Res.Name }}{
 		Metadata: parentProto,
-		Spec: &pb.{{ $.Res.Name }}Spec{
-			{{ goField .SpecField }}: convert.{{ goField .K8sType }}K8sToProto(sub.{{ goField .SpecField }}),
-		},
+		Spec: &pb.{{ $.Res.Name }}Spec{},
+		{{ goField .SpecField }}: convert.{{ goField .K8sType }}K8sToProto(sub.{{ goField .SpecField }}),
 	}
 
 	resp, err := s.client.{{ $.Res.Name }}s.{{ .GRPCMethod }}(ctx, &pb.{{ $.Res.Name }}Req_{{ .GRPCMethod }}{

@@ -32,6 +32,8 @@ spec:
           ports:
             - containerPort: 9006
               name: grpc
+            - containerPort: 9007
+              name: http
             - containerPort: 9010
               name: health
           env:
@@ -70,3 +72,6 @@ spec:
     - name: grpc
       port: 9006
       targetPort: 9006
+    - name: http
+      port: 9007
+      targetPort: 9007

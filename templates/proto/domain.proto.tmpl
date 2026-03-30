@@ -34,53 +34,45 @@ message ResourceReference {
   string namespace = 2;
 }
 
-// DualStackIPs holds IPv4 and IPv6 addresses for a host.
-message DualStackIPs {
-  repeated string ipv4 = 1;
-  repeated string ipv6 = 2;
+// ─── Schema-defined enums ─────────────────────────────────────
+{{ range .CustomEnums }}
+enum {{ .Name }} {
+{{- range .Values }}
+  {{ .Name }} = {{ .Number }};
+{{- end }}
 }
-
-// HostMetaInfo holds OS/platform metadata for a host.
-message HostMetaInfo {
-  string host_name = 1;
-  string os = 2;
-  string platform = 3;
-  string platform_family = 4;
-  string platform_version = 5;
-  string kernel_version = 6;
-}
-
-// TransportEntry represents a single port range or ICMP type set.
-// Uses oneof: ports (TCP/UDP) vs types (ICMP).
-message TransportEntry {
-  string description = 1;
-  string comment = 2;
-  oneof entry {
-    string ports = 3;
-    ICMPTypes types = 4;
+{{ end }}
+// ─── Schema-defined messages ──────────────────────────────────
+{{ range $msg := .CustomMessages }}
+message {{ $msg.Name }} {
+{{- if $msg.OneOfName }}
+{{- range $f := $msg.Fields }}
+{{- if not $f.OneOfGroup }}
+{{- if $f.Repeated }}
+  repeated {{ $f.Type }} {{ $f.Name }} = {{ $f.Number }}{{ if $f.JSONName }} [json_name = "{{ $f.JSONName }}"]{{ end }};
+{{- else }}
+  {{ $f.Type }} {{ $f.Name }} = {{ $f.Number }}{{ if $f.JSONName }} [json_name = "{{ $f.JSONName }}"]{{ end }};
+{{- end }}
+{{- end }}
+{{- end }}
+  oneof {{ $msg.OneOfName }} {
+{{- range $f := $msg.Fields }}
+{{- if $f.OneOfGroup }}
+    {{ $f.Type }} {{ $f.Name }} = {{ $f.Number }};
+{{- end }}
+{{- end }}
   }
+{{- else }}
+{{- range $f := $msg.Fields }}
+{{- if $f.Repeated }}
+  repeated {{ $f.Type }} {{ $f.Name }} = {{ $f.Number }}{{ if $f.JSONName }} [json_name = "{{ $f.JSONName }}"]{{ end }};
+{{- else }}
+  {{ $f.Type }} {{ $f.Name }} = {{ $f.Number }}{{ if $f.JSONName }} [json_name = "{{ $f.JSONName }}"]{{ end }};
+{{- end }}
+{{- end }}
+{{- end }}
 }
-
-// ICMPTypes is a wrapper for repeated ICMP type numbers.
-message ICMPTypes {
-  repeated int32 values = 1;
-}
-
-// Transport describes a protocol + IP family + entries.
-message Transport {
-  string protocol = 1;
-  string ip_v = 2;
-  repeated TransportEntry entries = 3;
-}
-
-// ResourceEventType represents the type of a resource watch event.
-enum ResourceEventType {
-  RESOURCE_EVENT_TYPE_UNSPECIFIED = 0;
-  ADDED = 1;
-  MODIFIED = 2;
-  DELETED = 3;
-  INIT = 4;
-}
+{{ end }}
 
 // ─── Standard resources ──────────────────────────────────────
 
@@ -92,6 +84,13 @@ message {{ .Name }} {
 {{- if .List.HasRefs }}
   repeated ResourceRef refs = 3;
 {{- end }}
+{{- range .TopLevelFields }}
+{{- if .JSONName }}
+  {{ .Type }} {{ .Name }} = {{ .Number }} [json_name = "{{ .JSONName }}"];
+{{- else }}
+  {{ .Type }} {{ .Name }} = {{ .Number }};
+{{- end }}
+{{- end }}
 }
 
 // {{ .Name }}Spec holds the spec fields of {{ .Name }}.
@@ -100,7 +99,11 @@ message {{ .Name }}Spec {
   string description = 2;
   string comment = 3;
 {{- range .SpecFields }}
+{{- if .JSONName }}
+  {{ .Type }} {{ .Name }} = {{ .Number }} [json_name = "{{ .JSONName }}"];
+{{- else }}
   {{ .Type }} {{ .Name }} = {{ .Number }};
+{{- end }}
 {{- end }}
 {{- if .IsBinding }}
 {{- range .RefFields }}

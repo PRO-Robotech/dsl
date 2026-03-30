@@ -23,10 +23,10 @@ func (s *Service{{ .Res.Name }}) Upsert{{ .Res.Name }}s(
 		d := dto.{{ .Res.Name }}FromProto(pbItem)
 
 		if err := {{ .Project.Name }}.Validate{{ .Res.Name }}Metadata(&d); err != nil {
-			return nil, status.Errorf(codes.InvalidArgument, "validation: %v", err)
+			return nil, status.Errorf(codes.InvalidArgument, "%v", err)
 		}
 		if err := {{ .Project.Name }}.Validate{{ .Res.Name }}(&d); err != nil {
-			return nil, status.Errorf(codes.InvalidArgument, "validation: %v", err)
+			return nil, status.Errorf(codes.InvalidArgument, "%v", err)
 		}
 
 		items = append(items, d)
@@ -36,15 +36,58 @@ func (s *Service{{ .Res.Name }}) Upsert{{ .Res.Name }}s(
 	if err != nil {
 		return nil, err
 	}
+	defer func() { _ = writer.Abort(ctx) }()
 
 	if err := writer.Sync{{ .Res.Name }}s(ctx, sg.Upsert, items); err != nil {
-		_ = writer.Abort(ctx)
-		return nil, err
+		return nil, sg.WrapPGError(err)
 	}
 
 	if err := writer.Commit(ctx); err != nil {
-		return nil, err
+		return nil, sg.WrapPGError(err)
 	}
 
-	return &pb.{{ .Res.Name }}Resp_Upsert{}, nil
+	reader := s.repo.Reader(ctx)
+	var opts []sg.ListOption
+	for _, item := range items {
+		opts = append(opts, sg.WithName(item.Metadata.Name))
+	}
+	if len(items) == 1 {
+{{- if .Res.IsNamespaced }}
+		if items[0].Metadata.Namespace != "" {
+			opts = append(opts, sg.WithNamespace(items[0].Metadata.Namespace))
+		}
+{{- end }}
+		result, err := reader.List{{ .Res.Name }}s(ctx, opts...)
+		if err != nil {
+			return nil, err
+		}
+		pbItems := make([]*pb.{{ .Res.Name }}, 0, len(result))
+		for _, r := range result {
+			pbItems = append(pbItems, dto.{{ .Res.Name }}ToProto(r))
+		}
+		return &pb.{{ .Res.Name }}Resp_Upsert{
+			{{ resGoPlural .Res.Name }}: pbItems,
+		}, nil
+	}
+
+	var allResults []*pb.{{ .Res.Name }}
+	for _, item := range items {
+		var readOpts []sg.ListOption
+		readOpts = append(readOpts, sg.WithName(item.Metadata.Name))
+{{- if .Res.IsNamespaced }}
+		if item.Metadata.Namespace != "" {
+			readOpts = append(readOpts, sg.WithNamespace(item.Metadata.Namespace))
+		}
+{{- end }}
+		result, err := reader.List{{ .Res.Name }}s(ctx, readOpts...)
+		if err != nil {
+			return nil, err
+		}
+		for _, r := range result {
+			allResults = append(allResults, dto.{{ .Res.Name }}ToProto(r))
+		}
+	}
+	return &pb.{{ .Res.Name }}Resp_Upsert{
+		{{ resGoPlural .Res.Name }}: allResults,
+	}, nil
 }

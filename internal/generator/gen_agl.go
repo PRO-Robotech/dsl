@@ -61,7 +61,7 @@ func (g *Generator) buildAGLData() aglTemplateData {
 		}
 		ar := aglResource{Resource: res}
 		for _, f := range res.Spec.Fields {
-			k8sType := mapGoTypeToK8s(f.GoType)
+			k8sType := resolveK8sType(f)
 			if f.Repeated {
 				k8sType = "[]" + k8sType
 			}
@@ -78,23 +78,17 @@ func (g *Generator) buildAGLData() aglTemplateData {
 	return data
 }
 
-func mapGoTypeToK8s(goType string) string {
-	switch goType {
-	case "PolicyAction":
-		return "Action"
-	case "bool":
-		return "bool"
-	case "IPNet":
-		return "string"
-	case "DualStackIPs":
-		return "DualStackIPs"
-	case "HostInfo":
-		return "HostMetaInfo"
-	case "TransportSpec":
-		return "Transport"
-	default:
-		return goType
+func resolveK8sType(f ir.SpecField) string {
+	if f.ResolvedType != nil {
+		if f.ResolvedType.K8sName != "" {
+			return f.ResolvedType.K8sName
+		}
+		return f.GoType
 	}
+	if f.SQLType == "cidr" {
+		return "string"
+	}
+	return f.GoType
 }
 
 func (g *Generator) GenerateAGL() error {

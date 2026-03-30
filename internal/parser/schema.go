@@ -46,6 +46,18 @@ type yamlType struct {
 	Mapping       yamlTypeMapping     `yaml:"mapping"`
 	K8sName       string              `yaml:"k8sName"`
 	ProtoName     string              `yaml:"protoName"`
+	ProtoMessages []yamlProtoMessage  `yaml:"protoMessages"`
+	ProtoEnums    []yamlProtoEnum     `yaml:"protoEnums"`
+	GoFields      []yamlGoField       `yaml:"goFields"`
+	K8sFields     []yamlGoField       `yaml:"k8sFields"`
+}
+
+type yamlGoField struct {
+	Name      string `yaml:"name"`
+	Type      string `yaml:"type"`
+	JSONName  string `yaml:"jsonName"`
+	ProtoName string `yaml:"protoName"`
+	OmitEmpty bool   `yaml:"omitEmpty"`
 }
 
 type yamlTypeMapping struct {
@@ -58,6 +70,31 @@ type yamlTypeField struct {
 	Name       string `yaml:"name"`
 	Type       string `yaml:"type"`
 	OneOfGroup string `yaml:"oneofGroup"`
+}
+
+type yamlProtoMessage struct {
+	Name      string           `yaml:"name"`
+	Fields    []yamlProtoField `yaml:"fields"`
+	OneOfName string           `yaml:"oneofName"`
+}
+
+type yamlProtoField struct {
+	Name       string `yaml:"name"`
+	Type       string `yaml:"type"`
+	Number     int    `yaml:"number"`
+	Repeated   bool   `yaml:"repeated"`
+	JSONName   string `yaml:"jsonName"`
+	OneOfGroup string `yaml:"oneofGroup"`
+}
+
+type yamlProtoEnum struct {
+	Name   string               `yaml:"name"`
+	Values []yamlProtoEnumValue `yaml:"values"`
+}
+
+type yamlProtoEnumValue struct {
+	Name   string `yaml:"name"`
+	Number int    `yaml:"number"`
 }
 
 type yamlResource struct {
@@ -143,10 +180,11 @@ type yamlExtraSyncer struct {
 }
 
 type yamlExtraGRPC struct {
-	Name     string `yaml:"name"`
-	Scaffold bool   `yaml:"scaffold"`
-	HTTPPath string `yaml:"httpPath"`
-	HTTPVerb string `yaml:"httpVerb"`
+	Name       string `yaml:"name"`
+	Scaffold   bool   `yaml:"scaffold"`
+	HTTPPath   string `yaml:"httpPath"`
+	HTTPVerb   string `yaml:"httpVerb"`
+	SyncerName string `yaml:"syncerName"`
 }
 
 type yamlK8sSubresource struct {
@@ -277,7 +315,11 @@ func convert(raw yamlSchema) (*ir.Schema, error) {
 		}
 		protoName := t.ProtoName
 		if protoName == "" {
-			protoName = toPascalCase(name)
+			if t.Mapping.Proto != "" && t.Mapping.Proto != "string" {
+				protoName = t.Mapping.Proto
+			} else {
+				protoName = toPascalCase(name)
+			}
 		}
 
 		mapping := ir.TypeMapping{
@@ -320,6 +362,51 @@ func convert(raw yamlSchema) (*ir.Schema, error) {
 				OneOfGroup: f.OneOfGroup,
 			})
 		}
+		for _, pm := range t.ProtoMessages {
+			msg := ir.ProtoMessageDef{
+				Name:      pm.Name,
+				OneOfName: pm.OneOfName,
+			}
+			for _, pf := range pm.Fields {
+				msg.Fields = append(msg.Fields, ir.ProtoFieldDef{
+					Name:       pf.Name,
+					Type:       pf.Type,
+					Number:     pf.Number,
+					Repeated:   pf.Repeated,
+					JSONName:   pf.JSONName,
+					OneOfGroup: pf.OneOfGroup,
+				})
+			}
+			ct.ProtoMessages = append(ct.ProtoMessages, msg)
+		}
+		for _, pe := range t.ProtoEnums {
+			enumDef := ir.ProtoEnumDef{Name: pe.Name}
+			for _, v := range pe.Values {
+				enumDef.Values = append(enumDef.Values, ir.ProtoEnumValue{
+					Name:   v.Name,
+					Number: v.Number,
+				})
+			}
+			ct.ProtoEnums = append(ct.ProtoEnums, enumDef)
+		}
+		for _, gf := range t.GoFields {
+			ct.GoFields = append(ct.GoFields, ir.GoFieldDef{
+				Name:      gf.Name,
+				Type:      gf.Type,
+				JSONName:  gf.JSONName,
+				ProtoName: gf.ProtoName,
+				OmitEmpty: gf.OmitEmpty,
+			})
+		}
+		for _, kf := range t.K8sFields {
+			ct.K8sFields = append(ct.K8sFields, ir.GoFieldDef{
+				Name:      kf.Name,
+				Type:      kf.Type,
+				JSONName:  kf.JSONName,
+				ProtoName: kf.ProtoName,
+				OmitEmpty: kf.OmitEmpty,
+			})
+		}
 		s.Types = append(s.Types, ct)
 
 		typeRegistry[name] = mapping
@@ -333,6 +420,12 @@ func convert(raw yamlSchema) (*ir.Schema, error) {
 		if _, exists := typeRegistry[name]; !exists {
 			typeRegistry[name] = m
 		}
+	}
+
+	// Build index of custom types by name for resolving spec fields.
+	customTypeIndex := make(map[string]*ir.CustomType, len(s.Types))
+	for i := range s.Types {
+		customTypeIndex[s.Types[i].Name] = &s.Types[i]
 	}
 
 	for _, r := range raw.Resources {
@@ -394,6 +487,23 @@ func convert(raw yamlSchema) (*ir.Schema, error) {
 					sf.ProtoField = f.JSONName
 				}
 
+				// Resolve ConversionKind and ResolvedType.
+				if ct, ok := customTypeIndex[f.Type]; ok {
+					sf.ResolvedType = ct
+					switch {
+					case ct.Kind == "enum":
+						sf.ConversionKind = ir.ConvStringCast
+					case sf.SQLType == "cidr":
+						sf.ConversionKind = ir.ConvCIDR
+					case sf.SQLType == "jsonb":
+						sf.ConversionKind = ir.ConvJSONBStruct
+					default:
+						sf.ConversionKind = ir.ConvStringCast
+					}
+				} else {
+					sf.ConversionKind = ir.ConvPassthrough
+				}
+
 				res.Spec.Fields = append(res.Spec.Fields, sf)
 			}
 		}
@@ -425,6 +535,7 @@ func convert(raw yamlSchema) (*ir.Schema, error) {
 			res.ExtraGRPCMethods = append(res.ExtraGRPCMethods, ir.ExtraGRPCMethod{
 				Name: eg.Name, Scaffold: eg.Scaffold,
 				HTTPPath: eg.HTTPPath, HTTPVerb: eg.HTTPVerb,
+				SyncerName: eg.SyncerName,
 			})
 		}
 		for _, ks := range r.K8sSubresources {

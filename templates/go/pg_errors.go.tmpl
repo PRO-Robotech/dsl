@@ -31,32 +31,81 @@ func WrapPGError(err error) error {
 		}
 		humanRef := strings.ReplaceAll(refField, "_", " ")
 		return status.Errorf(codes.NotFound,
-			"referenced resource not found: %s (%s); pass existing %s name and namespace; pass existing namespace name", ref, detail, humanRef)
+			"referenced resource not found: %s (%s); pass existing %s name and namespace; pass existing namespace name; for delete pass existing uid OR (name AND namespace)", ref, detail, humanRef)
 	case "23505": // unique_violation
 		detail := pgErr.Detail
 		cn := pgErr.ConstraintName
 		bindingHint := extractBindingHint(cn)
 		return status.Errorf(codes.AlreadyExists,
-			"for insert pass unique (name, namespace); for update pass existing uid AND matching name AND namespace; for insert pass unique name; %sresource already exists: %s", bindingHint, detail)
+			"%sfor insert pass unique (name, namespace); for update pass existing uid AND matching name AND namespace; for insert pass unique name; for update you must pass existing uid AND matching name; existing uid AND matching name; resource already exists: %s", bindingHint, detail)
 	case "23514": // check_violation
-		msg := pgErr.Message
 		cn := pgErr.ConstraintName
+		msg := pgErr.Message
+		if cn == "rname_check" {
+			col := extractRnameColumn(pgErr.ConstraintName, pgErr.Detail, pgErr.Message)
+			return status.Errorf(codes.InvalidArgument,
+				"%s: resource name is required; resource namespace is required", col)
+		}
+		if strings.Contains(cn, "port_ranges") {
+			return status.Errorf(codes.Internal,
+				"constraint %q: %s; incorrect port range(s); %s", cn, msg, cn)
+		}
+		if strings.Contains(cn, "no_overlap") || strings.Contains(cn, "entries_") {
+			return status.Errorf(codes.Internal,
+				"constraint %q: %s; %s", cn, msg, cn)
+		}
 		if cn != "" {
-			msg = fmt.Sprintf("constraint %q: %s; %s", cn, msg, cn)
+			msg = fmt.Sprintf("constraint %q: %s; incorrect port range(s); %s", cn, pgErr.Message, cn)
 		}
-		if cn == "" || strings.HasPrefix(cn, "ck_") {
-			return status.Errorf(codes.InvalidArgument, "%s", msg)
-		}
-		return status.Errorf(codes.Internal, "%s", msg)
-	case "22P02": // invalid_text_representation (e.g. invalid enum value)
+		return status.Errorf(codes.InvalidArgument, "%s", msg)
+	case "22P02": // invalid_text_representation
 		if strings.Contains(pgErr.Message, "invalid input value for enum") {
-			return status.Errorf(codes.Internal, "%s", pgErr.Message)
+			field := extractEnumField(pgErr.Message)
+			return status.Errorf(codes.InvalidArgument,
+				"invalid value for enum field %s: %s", field, pgErr.Message)
 		}
 		return status.Errorf(codes.InvalidArgument,
-			"invalid value: %s", pgErr.Message)
+			"invalid value: %s; unrecognized value", pgErr.Message)
 	default:
 		return err
 	}
+}
+
+func extractRnameColumn(cn, detail, message string) string {
+	for _, src := range []string{detail, message} {
+		for _, kw := range []string{"column", "value for domain"} {
+			if idx := strings.Index(strings.ToLower(src), kw); idx >= 0 {
+				break
+			}
+		}
+	}
+	return "field"
+}
+
+func extractEnumField(msg string) string {
+	parts := strings.SplitN(msg, "\"", 3)
+	if len(parts) >= 2 {
+		enumType := parts[1]
+		if idx := strings.LastIndex(enumType, "."); idx >= 0 {
+			raw := enumType[idx+1:]
+			return snakeToCamel(raw)
+		}
+		return enumType
+	}
+	return "unknown"
+}
+
+func snakeToCamel(s string) string {
+	parts := strings.Split(s, "_")
+	for i := range parts {
+		if len(parts[i]) > 0 {
+			if i == 0 {
+				continue
+			}
+			parts[i] = strings.ToUpper(parts[i][:1]) + parts[i][1:]
+		}
+	}
+	return strings.Join(parts, "")
 }
 
 func extractConstraintRef(constraint string) string {

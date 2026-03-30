@@ -13,27 +13,29 @@ func {{ .Res.Name }}SpecToProto(in *v1alpha1.{{ .Res.Name }}, out *pb.{{ .Res.Na
 		out.Spec = &pb.{{ .Res.Name }}Spec{}
 	}
 {{- range .Res.Spec.Fields }}
+{{- if .OutputOnly }}
+{{- if .Repeated }}
+	for _, item := range in.{{ goField .Name }} {
+		out.{{ goField .Name }} = append(out.{{ goField .Name }}, {{ trimPrefix .K8sGoType "[]" }}K8sToProto(item))
+	}
+{{- else if eq .SQLType "bool" }}
+	out.{{ goField .Name }} = in.{{ goField .Name }}
+{{- else if eq .ProtoType "string" }}
+	out.{{ goField .Name }} = string(in.{{ goField .Name }})
+{{- else }}
+	out.{{ goField .Name }} = {{ .K8sGoType }}K8sToProto(in.{{ goField .Name }})
+{{- end }}
+{{- else }}
 {{- if .Repeated }}
 	for _, item := range in.Spec.{{ goField .Name }} {
 		out.Spec.{{ goField .Name }} = append(out.Spec.{{ goField .Name }}, {{ trimPrefix .K8sGoType "[]" }}K8sToProto(item))
 	}
 {{- else if eq .SQLType "bool" }}
-{{- if .OutputOnly }}
-	out.Spec.{{ goField .Name }} = in.{{ goField .Name }}
-{{- else }}
 	out.Spec.{{ goField .Name }} = in.Spec.{{ goField .Name }}
-{{- end }}
 {{- else if eq .SQLType "cidr" }}
 	out.Spec.{{ goField .Name }} = in.Spec.{{ goField .Name }}
 {{- else if eq .ProtoType "string" }}
-{{- if .OutputOnly }}
-	out.Spec.{{ goField .Name }} = string(in.{{ goField .Name }})
-{{- else }}
 	out.Spec.{{ goField .Name }} = string(in.Spec.{{ goField .Name }})
-{{- end }}
-{{- else }}
-{{- if .OutputOnly }}
-	out.Spec.{{ goField .Name }} = {{ .K8sGoType }}K8sToProto(in.{{ goField .Name }})
 {{- else }}
 	out.Spec.{{ goField .Name }} = {{ .K8sGoType }}K8sToProto(in.Spec.{{ goField .Name }})
 {{- end }}
@@ -47,35 +49,37 @@ func {{ .Res.Name }}SpecToProto(in *v1alpha1.{{ .Res.Name }}, out *pb.{{ .Res.Na
 // {{ .Res.Name }}SpecFromProto converts custom spec fields from proto to K8s.
 func {{ .Res.Name }}SpecFromProto(in *pb.{{ .Res.Name }}, out *v1alpha1.{{ .Res.Name }}) {
 {{- range .Res.Spec.Fields }}
+{{- if .OutputOnly }}
+{{- if .Repeated }}
+	for _, item := range in.Get{{ goField .Name }}() {
+		out.{{ goField .Name }} = append(out.{{ goField .Name }}, {{ trimPrefix .K8sGoType "[]" }}ProtoToK8s(item))
+	}
+{{- else if eq .SQLType "bool" }}
+	out.{{ goField .Name }} = in.Get{{ goField .Name }}()
+{{- else if eq .ProtoType "string" }}
+{{- if or (eq .K8sGoType "string") (eq .K8sGoType "bool") }}
+	out.{{ goField .Name }} = in.Get{{ goField .Name }}()
+{{- else }}
+	out.{{ goField .Name }} = v1alpha1.{{ .K8sGoType }}(in.Get{{ goField .Name }}())
+{{- end }}
+{{- else }}
+	out.{{ goField .Name }} = {{ .K8sGoType }}ProtoToK8s(in.Get{{ goField .Name }}())
+{{- end }}
+{{- else }}
 {{- if .Repeated }}
 	for _, item := range in.GetSpec().Get{{ goField .Name }}() {
 		out.Spec.{{ goField .Name }} = append(out.Spec.{{ goField .Name }}, {{ trimPrefix .K8sGoType "[]" }}ProtoToK8s(item))
 	}
 {{- else if eq .SQLType "bool" }}
-{{- if .OutputOnly }}
-	out.{{ goField .Name }} = in.GetSpec().Get{{ goField .Name }}()
-{{- else }}
 	out.Spec.{{ goField .Name }} = in.GetSpec().Get{{ goField .Name }}()
-{{- end }}
 {{- else if eq .SQLType "cidr" }}
 	out.Spec.{{ goField .Name }} = in.GetSpec().Get{{ goField .Name }}()
 {{- else if eq .ProtoType "string" }}
 {{- if or (eq .K8sGoType "string") (eq .K8sGoType "bool") }}
-{{- if .OutputOnly }}
-	out.{{ goField .Name }} = in.GetSpec().Get{{ goField .Name }}()
-{{- else }}
 	out.Spec.{{ goField .Name }} = in.GetSpec().Get{{ goField .Name }}()
-{{- end }}
-{{- else }}
-{{- if .OutputOnly }}
-	out.{{ goField .Name }} = v1alpha1.{{ .K8sGoType }}(in.GetSpec().Get{{ goField .Name }}())
 {{- else }}
 	out.Spec.{{ goField .Name }} = v1alpha1.{{ .K8sGoType }}(in.GetSpec().Get{{ goField .Name }}())
 {{- end }}
-{{- end }}
-{{- else }}
-{{- if .OutputOnly }}
-	out.{{ goField .Name }} = {{ .K8sGoType }}ProtoToK8s(in.GetSpec().Get{{ goField .Name }}())
 {{- else }}
 	out.Spec.{{ goField .Name }} = {{ .K8sGoType }}ProtoToK8s(in.GetSpec().Get{{ goField .Name }}())
 {{- end }}

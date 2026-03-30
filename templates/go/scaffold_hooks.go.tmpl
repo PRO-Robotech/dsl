@@ -14,23 +14,16 @@ import (
 // Custom hooks and business logic for {{ .Res.Name }}.
 // This file is generated once — add your pre/post hooks, custom RPCs here.
 
-{{ range .Res.ExtraGRPCMethods }}
-{{ if eq .Name "UpdIPs" }}
-// UpdIPs updates the IP addresses of existing hosts.
-// Requires uid + name + namespace to identify hosts.
-func (s *Service{{ $.Res.Name }}) UpdIPs(ctx context.Context, req *pb.{{ $.Res.Name }}Req_UpdIPs) (*pb.{{ $.Res.Name }}Resp_UpdIPs, error) {
+{{ range $m := .Res.ExtraGRPCMethods }}
+{{ if and $m.Scaffold $m.SyncerName }}
+func (s *Service{{ $.Res.Name }}) {{ $m.Name }}(ctx context.Context, req *pb.{{ $.Res.Name }}Req_{{ $m.Name }}) (*pb.{{ $.Res.Name }}Resp_{{ $m.Name }}, error) {
 	items := make([]{{ $.Project.Name }}.{{ $.Res.Name }}, 0, len(req.Get{{ resGoPlural $.Res.Name }}()))
 	for _, pbItem := range req.Get{{ resGoPlural $.Res.Name }}() {
 		d := dto.{{ $.Res.Name }}FromProto(pbItem)
 
-		if d.Metadata.UID.String() == "" || d.Metadata.UID.String() == "00000000-0000-0000-0000-000000000000" {
-			return nil, status.Errorf(codes.InvalidArgument, "metadata.uid is required for UpdIPs")
-		}
-		if d.Metadata.Name == "" {
-			return nil, status.Errorf(codes.InvalidArgument, "metadata.name is required for UpdIPs")
-		}
-		if d.Metadata.Namespace == "" {
-			return nil, status.Errorf(codes.InvalidArgument, "metadata.namespace is required for UpdIPs")
+		isZeroUID := d.Metadata.UID.String() == "" || d.Metadata.UID.String() == "00000000-0000-0000-0000-000000000000"
+		if isZeroUID || d.Metadata.Name == "" || d.Metadata.Namespace == "" {
+			return nil, status.Errorf(codes.InvalidArgument, "pass existing uid, name AND namespace; metadata.uid, metadata.name and metadata.namespace are all required for {{ $m.Name }}")
 		}
 
 		items = append(items, d)
@@ -40,59 +33,26 @@ func (s *Service{{ $.Res.Name }}) UpdIPs(ctx context.Context, req *pb.{{ $.Res.N
 	if err != nil {
 		return nil, err
 	}
+	defer func() { _ = writer.Abort(ctx) }()
 
-	if err := writer.SyncHostIPs(ctx, sg.Upsert, items); err != nil {
-		_ = writer.Abort(ctx)
-		return nil, err
+	if err := writer.Sync{{ $m.SyncerName }}(ctx, sg.Upsert, items); err != nil {
+		wrapped := sg.WrapPGError(err)
+		st, ok := status.FromError(wrapped)
+		if ok && st.Code() == codes.NotFound {
+			return nil, status.Errorf(codes.NotFound, "pass existing name, namespace and uid; %s", st.Message())
+		}
+		return nil, wrapped
 	}
 
 	if err := writer.Commit(ctx); err != nil {
-		return nil, err
+		return nil, sg.WrapPGError(err)
 	}
 
-	return &pb.{{ $.Res.Name }}Resp_UpdIPs{}, nil
-}
-{{ else if eq .Name "UpdMetaInfo" }}
-// UpdMetaInfo updates the OS/platform metadata of existing hosts.
-// Requires uid + name + namespace to identify hosts.
-func (s *Service{{ $.Res.Name }}) UpdMetaInfo(ctx context.Context, req *pb.{{ $.Res.Name }}Req_UpdMetaInfo) (*pb.{{ $.Res.Name }}Resp_UpdMetaInfo, error) {
-	items := make([]{{ $.Project.Name }}.{{ $.Res.Name }}, 0, len(req.Get{{ resGoPlural $.Res.Name }}()))
-	for _, pbItem := range req.Get{{ resGoPlural $.Res.Name }}() {
-		d := dto.{{ $.Res.Name }}FromProto(pbItem)
-
-		if d.Metadata.UID.String() == "" || d.Metadata.UID.String() == "00000000-0000-0000-0000-000000000000" {
-			return nil, status.Errorf(codes.InvalidArgument, "metadata.uid is required for UpdMetaInfo")
-		}
-		if d.Metadata.Name == "" {
-			return nil, status.Errorf(codes.InvalidArgument, "metadata.name is required for UpdMetaInfo")
-		}
-		if d.Metadata.Namespace == "" {
-			return nil, status.Errorf(codes.InvalidArgument, "metadata.namespace is required for UpdMetaInfo")
-		}
-
-		items = append(items, d)
-	}
-
-	writer, err := s.repo.Writer(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	if err := writer.SyncHostInfo(ctx, sg.Upsert, items); err != nil {
-		_ = writer.Abort(ctx)
-		return nil, err
-	}
-
-	if err := writer.Commit(ctx); err != nil {
-		return nil, err
-	}
-
-	return &pb.{{ $.Res.Name }}Resp_UpdMetaInfo{}, nil
+	return &pb.{{ $.Res.Name }}Resp_{{ $m.Name }}{}, nil
 }
 {{ else }}
-// {{ .Name }} is a custom RPC method for {{ $.Res.Name }}.
-func (s *Service{{ $.Res.Name }}) {{ .Name }}(ctx context.Context, req *pb.{{ $.Res.Name }}Req_{{ .Name }}) (*pb.{{ $.Res.Name }}Resp_{{ .Name }}, error) {
-	return nil, status.Errorf(codes.Unimplemented, "{{ .Name }} not implemented")
+func (s *Service{{ $.Res.Name }}) {{ $m.Name }}(ctx context.Context, req *pb.{{ $.Res.Name }}Req_{{ $m.Name }}) (*pb.{{ $.Res.Name }}Resp_{{ $m.Name }}, error) {
+	return nil, status.Errorf(codes.Unimplemented, "{{ $m.Name }} not implemented")
 }
 {{ end }}
 {{ end }}

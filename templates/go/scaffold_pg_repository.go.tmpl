@@ -93,6 +93,16 @@ func (r *pgReader) List{{ $res.Name }}s(ctx context.Context, opts ...ListOption)
 		args = append(args, v)
 		argN++
 	}
+	if v, ok := p.SpecFields["{{ $ref.Name }}.name"]; ok {
+		wheres = append(wheres, fmt.Sprintf("{{ $ref.SQLColumn }} = $%d", argN))
+		args = append(args, v)
+		argN++
+	}
+	if v, ok := p.SpecFields["{{ $ref.Name }}.namespace"]; ok {
+		wheres = append(wheres, fmt.Sprintf("namespace = $%d", argN))
+		args = append(args, v)
+		argN++
+	}
 {{- end }}
 {{- end }}
 {{- end }}

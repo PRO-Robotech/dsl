@@ -90,11 +90,14 @@ func New(schema *ir.Schema, outputDir, tmplDir string) *Generator {
 			return goFieldName(typeName)
 		},
 		"protoWrapperName": func(fieldName string) string {
-			wrapperMap := map[string]string{
-				"types": "ICMPTypes",
-			}
-			if name, ok := wrapperMap[fieldName]; ok {
-				return name
+			for _, ct := range schema.Types {
+				for _, pm := range ct.ProtoMessages {
+					for _, pf := range pm.Fields {
+						if pf.Name == fieldName && pf.OneOfGroup != "" {
+							return pf.Type
+						}
+					}
+				}
 			}
 			return goFieldName(fieldName) + "Wrapper"
 		},
@@ -117,9 +120,9 @@ func New(schema *ir.Schema, outputDir, tmplDir string) *Generator {
 				switch {
 				case f.GoType == "bool":
 					parts = append(parts, fmt.Sprintf(",\"%s\":true", jsonName))
-				case f.GoType == "PolicyAction":
-					parts = append(parts, fmt.Sprintf(",\"%s\":\"DENY\"", jsonName))
-				case f.GoType == "IPNet":
+				case f.ConversionKind == ir.ConvStringCast && len(f.EnumValues) > 0:
+					parts = append(parts, fmt.Sprintf(",\"%s\":\"%s\"", jsonName, f.EnumValues[0]))
+				case f.ConversionKind == ir.ConvCIDR:
 					parts = append(parts, fmt.Sprintf(",\"%s\":\"10.0.0.0/8\"", jsonName))
 				default:
 					parts = append(parts, fmt.Sprintf(",\"%s\":\"test\"", jsonName))

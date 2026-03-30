@@ -8,7 +8,8 @@ FROM golang:1.22-alpine AS builder
 
 RUN apk add --no-cache git ca-certificates protobuf protobuf-dev
 RUN go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.34.1 && \
-    go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.3.0
+    go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.3.0 && \
+    go install github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-grpc-gateway@v2.22.0
 
 RUN mkdir -p /proto-include/google/api && \
     wget -qO- https://github.com/googleapis/googleapis/archive/refs/heads/master.tar.gz | \
@@ -23,6 +24,7 @@ COPY . .
 
 RUN protoc --go_out=. --go_opt=module={{ .Module }} \
            --go-grpc_out=. --go-grpc_opt=module={{ .Module }} \
+           --grpc-gateway_out=. --grpc-gateway_opt=module={{ .Module }},logtostderr=true \
            -I api/proto/ -I /proto-include \
            api/proto/{{ .Project.Name }}/v1/*.proto
 

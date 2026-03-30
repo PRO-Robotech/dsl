@@ -1,19 +1,58 @@
 package {{ $.DomainPkg }}
 
-// Custom validation logic for domain objects.
-// This file is generated once — add your business validation rules here.
-// Generated metadata validation is in validators_gen.go.
+import (
+	"fmt"
+	"net"
+	"strings"
+)
 
 {{ range .Resources }}
 {{- if not .IsComposite }}
 // Validate{{ .Name }} validates a {{ .Name }} domain object before sync.
-// Called after Validate{{ .Name }}Metadata.
 func Validate{{ .Name }}(obj *{{ .Name }}) error {
+{{- if .IsBinding }}
+{{- range .Refs }}
+	{
+		ref := obj.Spec.{{ goField .Name }}
+		if ref.Name == "" && ref.Namespace == "" {
+			return fmt.Errorf("{{ .Target }}: Name: resource name is required; Namespace: resource namespace is required")
+		}
+		if ref.Name == "" {
+			return fmt.Errorf("{{ .Target }}: Name: resource name is required")
+		}
+		if ref.Namespace == "" {
+			return fmt.Errorf("{{ .Target }}: Namespace: resource namespace is required")
+		}
+	}
+{{- end }}
+{{- end }}
 {{- range .Spec.Fields }}
-{{- if .Validate }}
-	// TODO: validate spec.{{ .Name }} — {{ .Validate }}
+{{- if eq .ConversionKind "cidr" }}
+	{
+		cidrStr := obj.Spec.{{ goField .Name }}.String()
+		if cidrStr == "<nil>" || cidrStr == "" {
+			return fmt.Errorf("bad CIDR: CIDR is required")
+		}
+		if _, cidr, err := net.ParseCIDR(cidrStr); err != nil {
+			if strings.Contains(err.Error(), "invalid CIDR address") {
+				return fmt.Errorf("bad CIDR: %v", err)
+			}
+			return fmt.Errorf("bad CIDR: %v", err)
+		} else if cidr.String() != cidrStr {
+			return fmt.Errorf("CIDR %q is not in canonical form; use %q", cidrStr, cidr.String())
+		}
+	}
+{{- end }}
+{{- if eq .Name "default_action" }}
+	{
+		da := string(obj.Spec.DefaultAction)
+		if da != "" && da != "ALLOW" && da != "DENY" {
+			return fmt.Errorf("invalid value for enum field defaultAction: %q", da)
+		}
+	}
 {{- end }}
 {{- end }}
+	_ = strings.Contains
 	return nil
 }
 {{ end }}
