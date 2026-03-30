@@ -1,0 +1,102 @@
+package main
+
+import (
+	"os"
+	"time"
+
+	"github.com/spf13/cobra"
+
+	"{{ .Module }}/internal/apiserver"
+	v1alpha1 "{{ .Module }}/pkg/apis/sgroups/v1alpha1"
+	"{{ .Module }}/internal/registry/options"
+	"{{ .Module }}/pkg/client"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+
+	genericapiserver "k8s.io/apiserver/pkg/server"
+	openapinamer "k8s.io/apiserver/pkg/endpoints/openapi"
+	serveroptions "k8s.io/apiserver/pkg/server/options"
+	"k8s.io/component-base/cli"
+	"k8s.io/klog/v2"
+	"k8s.io/kube-openapi/pkg/validation/spec"
+)
+
+func main() {
+	klog.InitFlags(nil)
+	code := cli.Run(newCommand())
+	os.Exit(code)
+}
+
+func newCommand() *cobra.Command {
+	o := newOptions()
+	cmd := &cobra.Command{
+		Use:   "sgroups-k8s-apiserver",
+		Short: "SGroups Aggregated API Server",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runServer(o, genericapiserver.SetupSignalHandler())
+		},
+	}
+	o.recommended.AddFlags(cmd.Flags())
+	cmd.Flags().StringVar(&o.grpcBackend, "grpc-backend", envOrDefault("GRPC_BACKEND", "sgroups-backend:9006"), "gRPC backend address")
+	return cmd
+}
+
+type serverOptions struct {
+	recommended *serveroptions.RecommendedOptions
+	grpcBackend string
+}
+
+func newOptions() *serverOptions {
+	o := serveroptions.NewRecommendedOptions(
+		"",
+		v1alpha1.Codecs.LegacyCodec(v1alpha1.SchemeGroupVersion),
+	)
+	o.Etcd = nil // aggregated apiserver: storage is backed by gRPC, not etcd
+	return &serverOptions{recommended: o}
+}
+
+func runServer(o *serverOptions, stopCh <-chan struct{}) error {
+	serverConfig := genericapiserver.NewRecommendedConfig(v1alpha1.Codecs)
+	if err := o.recommended.ApplyTo(serverConfig); err != nil {
+		return err
+	}
+
+	serverConfig.OpenAPIConfig = genericapiserver.DefaultOpenAPIConfig(
+		v1alpha1.GetOpenAPIDefinitions,
+		openapinamer.NewDefinitionNamer(v1alpha1.Scheme),
+	)
+	serverConfig.OpenAPIConfig.Info = &spec.Info{InfoProps: spec.InfoProps{Title: "SGroups API", Version: "v1alpha1"}}
+	serverConfig.OpenAPIV3Config = genericapiserver.DefaultOpenAPIV3Config(
+		v1alpha1.GetOpenAPIDefinitions,
+		openapinamer.NewDefinitionNamer(v1alpha1.Scheme),
+	)
+	serverConfig.OpenAPIV3Config.Info = &spec.Info{InfoProps: spec.InfoProps{Title: "SGroups API", Version: "v1alpha1"}}
+	serverConfig.SkipOpenAPIInstallation = true
+
+	conn, err := grpc.NewClient(o.grpcBackend, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return err
+	}
+	grpcClient := client.New(conn)
+
+	cfg := &apiserver.Config{
+		GenericConfig: serverConfig,
+		GRPCClient:    grpcClient,
+		StorageOpts:   options.StorageOptions{Timeout: 30 * time.Second},
+	}
+
+	srv, err := cfg.Complete().New()
+	if err != nil {
+		return err
+	}
+
+	return srv.GenericAPIServer.PrepareRun().Run(stopCh)
+}
+
+func envOrDefault(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
+}

@@ -1,0 +1,101 @@
+package main
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"net"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/health"
+	"google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/reflection"
+
+	sg "{{ .Module }}/internal/sg-server/repository"
+{{- range .Resources }}
+	svc{{ .Name }} "{{ $.Module }}/internal/sg-server/transport/grpc/service/{{ lower .Name }}"
+{{- end }}
+)
+
+func main() {
+	grpcPort := os.Getenv("GRPC_PORT")
+	if grpcPort == "" {
+		grpcPort = "9006"
+	}
+	healthPort := os.Getenv("HEALTH_PORT")
+	if healthPort == "" {
+		healthPort = "9010"
+	}
+
+	dbHost := envOrDefault("DB_HOST", "localhost")
+	dbPort := envOrDefault("DB_PORT", "5432")
+	dbUser := envOrDefault("DB_USER", "user_admin")
+	dbPass := envOrDefault("DB_PASSWORD", "admin")
+	dbName := envOrDefault("DB_NAME", "sgroups")
+	dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable", dbHost, dbPort, dbUser, dbPass, dbName)
+
+	pool, err := pgxpool.New(context.Background(), dsn)
+	if err != nil {
+		log.Fatalf("pgxpool: %v", err)
+	}
+	defer pool.Close()
+	if err := pool.Ping(context.Background()); err != nil {
+		log.Fatalf("pg ping: %v", err)
+	}
+	log.Printf("connected to PG %s@%s:%s/%s", dbUser, dbHost, dbPort, dbName)
+
+	lis, err := net.Listen("tcp", ":"+grpcPort)
+	if err != nil {
+		log.Fatalf("listen: %v", err)
+	}
+
+	srv := grpc.NewServer()
+	reflection.Register(srv)
+
+	hsrv := health.NewServer()
+	grpc_health_v1.RegisterHealthServer(srv, hsrv)
+	hsrv.SetServingStatus("", grpc_health_v1.HealthCheckResponse_SERVING)
+
+	repo := sg.NewPGRepository(pool)
+{{- range .Resources }}
+	svc{{ .Name }}.NewService{{ .Name }}(repo).RegisterGRPC(srv)
+{{- end }}
+
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	go func() {
+		mux := http.NewServeMux()
+		mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("ok"))
+		})
+		log.Printf("health endpoint on :%s/healthz", healthPort)
+		if err := http.ListenAndServe(":"+healthPort, mux); err != nil {
+			log.Fatalf("health server: %v", err)
+		}
+	}()
+
+	go func() {
+		log.Printf("sgroups-backend gRPC on :%s", grpcPort)
+		if err := srv.Serve(lis); err != nil {
+			log.Fatalf("serve: %v", err)
+		}
+	}()
+
+	<-ctx.Done()
+	log.Println("shutting down...")
+	srv.GracefulStop()
+}
+
+func envOrDefault(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
+}

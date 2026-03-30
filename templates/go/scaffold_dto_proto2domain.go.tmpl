@@ -1,0 +1,69 @@
+package dto
+
+import (
+	sgroups "{{ .Module }}/internal/shared/domains/sgroups"
+	pb "{{ .Module }}/pkg/api/sgroups/v1"
+)
+
+// {{ .Res.Name }}SpecFromProto converts spec-specific fields from proto to domain.
+// This file is generated once — customize spec field mapping here.
+func {{ .Res.Name }}SpecFromProto(msg *pb.{{ .Res.Name }}, d *sgroups.{{ .Res.Name }}) {
+{{- range .Res.Spec.Fields }}
+{{- if eq .GoType "PolicyAction" }}
+	d.Spec.{{ goField .Name }} = sgroups.PolicyAction(msg.GetSpec().Get{{ goField .Name }}())
+{{- else if eq .GoType "bool" }}
+	d.Spec.{{ goField .Name }} = msg.GetSpec().Get{{ goField .Name }}()
+{{- else if eq .GoType "IPNet" }}
+	d.Spec.{{ goField .Name }} = sgroups.ParseIPNet(msg.GetSpec().Get{{ goField .Name }}())
+{{- else if eq .GoType "DualStackIPs" }}
+	if ips := msg.GetSpec().GetIps(); ips != nil {
+		d.{{ goField .Name }} = sgroups.DualStackIPs{
+			IPv4: ips.GetIpv4(),
+			IPv6: ips.GetIpv6(),
+		}
+	}
+{{- else if eq .GoType "HostInfo" }}
+	if mi := msg.GetSpec().GetMetaInfo(); mi != nil {
+		d.{{ goField .Name }} = sgroups.HostInfo{
+			HostName:        mi.GetHostName(),
+			OS:              mi.GetOs(),
+			Platform:        mi.GetPlatform(),
+			PlatformFamily:  mi.GetPlatformFamily(),
+			PlatformVersion: mi.GetPlatformVersion(),
+			KernelVersion:   mi.GetKernelVersion(),
+		}
+	}
+{{- else if eq .GoType "TransportSpec" }}
+	if t := msg.GetSpec().GetTransport(); t != nil {
+		ts := sgroups.TransportSpec{
+			Protocol: sgroups.Proto(t.GetProtocol()),
+			IPv:      sgroups.IPFamily(t.GetIpV()),
+		}
+		for _, e := range t.GetEntries() {
+			te := sgroups.TransportEntry{
+				Description: e.GetDescription(),
+				Comment:     e.GetComment(),
+			}
+			switch v := e.GetEntry().(type) {
+			case *pb.TransportEntry_Ports:
+				te.Ports = v.Ports
+			case *pb.TransportEntry_Types:
+				if v.Types != nil {
+					te.Types = make([]int, len(v.Types.GetValues()))
+					for i, val := range v.Types.GetValues() {
+						te.Types[i] = int(val)
+					}
+				}
+			}
+			ts.Entries = append(ts.Entries, te)
+		}
+		d.Spec.Transport = ts
+	}
+{{- else }}
+	// TODO: map msg field -> d.Spec.{{ goField .Name }}
+{{- end }}
+{{- end }}
+{{- if not (len .Res.Spec.Fields) }}
+	// No spec fields to map.
+{{- end }}
+}

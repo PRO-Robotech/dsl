@@ -1,0 +1,8 @@
+components:
+  - name: ipnet
+    kind: ipnet
+    go_import: net
+    test:
+      valid_expr: 'func() {{ .GoType }} { _, n, _ := net.ParseCIDR("10.0.0.0/8"); return {{ .GoType }}{IPNet: *n} }()'
+      zero_expr: "{{ .GoType }}{}"
+      invalid_expr: "{{ .GoType }}{}"

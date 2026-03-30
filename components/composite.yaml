@@ -1,0 +1,6 @@
+components:
+  - name: composite
+    kind: composite
+    test:
+      valid_expr: '{{ .GoType }}{}'
+      zero_expr: "{{ .GoType }}{}"

@@ -1,0 +1,63 @@
+package dto
+
+import (
+	sgroups "{{ .Module }}/internal/shared/domains/sgroups"
+	pb "{{ .Module }}/pkg/api/sgroups/v1"
+)
+
+// {{ .Res.Name }}SpecToProto converts spec-specific fields from domain to proto.
+// This file is generated once — customize spec field mapping here.
+func {{ .Res.Name }}SpecToProto(d sgroups.{{ .Res.Name }}, msg *pb.{{ .Res.Name }}) {
+{{- range .Res.Spec.Fields }}
+{{- if eq .GoType "PolicyAction" }}
+	msg.Spec.{{ goField .Name }} = string(d.Spec.{{ goField .Name }})
+{{- else if eq .GoType "bool" }}
+	msg.Spec.{{ goField .Name }} = d.Spec.{{ goField .Name }}
+{{- else if eq .GoType "IPNet" }}
+	msg.Spec.{{ goField .Name }} = d.Spec.{{ goField .Name }}.String()
+{{- else if eq .GoType "DualStackIPs" }}
+	msg.Spec.Ips = &pb.DualStackIPs{
+		Ipv4: d.{{ goField .Name }}.IPv4,
+		Ipv6: d.{{ goField .Name }}.IPv6,
+	}
+{{- else if eq .GoType "HostInfo" }}
+	msg.Spec.MetaInfo = &pb.HostMetaInfo{
+		HostName:        d.{{ goField .Name }}.HostName,
+		Os:              d.{{ goField .Name }}.OS,
+		Platform:        d.{{ goField .Name }}.Platform,
+		PlatformFamily:  d.{{ goField .Name }}.PlatformFamily,
+		PlatformVersion: d.{{ goField .Name }}.PlatformVersion,
+		KernelVersion:   d.{{ goField .Name }}.KernelVersion,
+	}
+{{- else if eq .GoType "TransportSpec" }}
+	if d.Spec.Transport.Protocol != "" {
+		t := &pb.Transport{
+			Protocol: string(d.Spec.Transport.Protocol),
+			IpV:      int32(d.Spec.Transport.IPv),
+		}
+		for _, e := range d.Spec.Transport.Entries {
+			entry := &pb.TransportEntry{
+				Description: e.Description,
+				Comment:     e.Comment,
+			}
+			if e.Ports != "" {
+				entry.Entry = &pb.TransportEntry_Ports{Ports: e.Ports}
+			} else if len(e.Types) > 0 {
+				vals := make([]int32, len(e.Types))
+				for i, v := range e.Types {
+					vals[i] = int32(v)
+				}
+				entry.Entry = &pb.TransportEntry_Types{Types: &pb.ICMPTypes{Values: vals}}
+			}
+			t.Entries = append(t.Entries, entry)
+		}
+		msg.Spec.Transport = t
+	}
+{{- else }}
+	// TODO: map d.Spec.{{ goField .Name }} -> msg.Spec.{{ goField .Name }}
+{{- end }}
+{{- end }}
+{{- if not (len .Res.Spec.Fields) }}
+	// No spec fields to map.
+{{- end }}
+}

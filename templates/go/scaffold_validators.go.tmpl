@@ -1,0 +1,20 @@
+package sgroups
+
+// Custom validation logic for domain objects.
+// This file is generated once — add your business validation rules here.
+// Generated metadata validation is in validators_gen.go.
+
+{{ range .Resources }}
+{{- if not .IsComposite }}
+// Validate{{ .Name }} validates a {{ .Name }} domain object before sync.
+// Called after Validate{{ .Name }}Metadata.
+func Validate{{ .Name }}(obj *{{ .Name }}) error {
+{{- range .Spec.Fields }}
+{{- if .Validate }}
+	// TODO: validate spec.{{ .Name }} — {{ .Validate }}
+{{- end }}
+{{- end }}
+	return nil
+}
+{{ end }}
+{{- end }}

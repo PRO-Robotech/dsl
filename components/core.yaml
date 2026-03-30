@@ -1,0 +1,30 @@
+components:
+  - name: bool
+    kind: scalar
+    test:
+      valid_expr: "false"
+      zero_expr: "false"
+
+  - name: string
+    kind: scalar
+    test:
+      valid_expr: '"test"'
+      zero_expr: '""'
+
+  - name: int
+    kind: scalar
+    test:
+      valid_expr: "42"
+      zero_expr: "0"
+
+  - name: int64
+    kind: scalar
+    test:
+      valid_expr: "42"
+      zero_expr: "0"
+
+  - name: float64
+    kind: scalar
+    test:
+      valid_expr: "1.0"
+      zero_expr: "0.0"

@@ -1,0 +1,7 @@
+components:
+  - name: enum
+    kind: enum
+    test:
+      valid_expr: "{{ .GoType }}{{ index .EnumValues 0 }}"
+      zero_expr: '""'
+      invalid_expr: '{{ .GoType }}("BOGUS")'

@@ -1,0 +1,98 @@
+package {{ lower .Res.Name }}
+{{ if .Res.ExtraGRPCMethods }}
+import (
+	"context"
+
+	sgroups "{{ .Module }}/internal/shared/domains/sgroups"
+	sg "{{ .Module }}/internal/sg-server/repository"
+	pb "{{ .Module }}/pkg/api/sgroups/v1"
+	"{{ .Module }}/internal/sg-server/transport/grpc/service/{{ lower .Res.Name }}/dto"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+)
+{{ end }}
+// Custom hooks and business logic for {{ .Res.Name }}.
+// This file is generated once — add your pre/post hooks, custom RPCs here.
+
+{{ range .Res.ExtraGRPCMethods }}
+{{ if eq .Name "UpdIPs" }}
+// UpdIPs updates the IP addresses of existing hosts.
+// Requires uid + name + namespace to identify hosts.
+func (s *Service{{ $.Res.Name }}) UpdIPs(ctx context.Context, req *pb.{{ $.Res.Name }}Req_UpdIPs) (*pb.{{ $.Res.Name }}Resp_UpdIPs, error) {
+	items := make([]sgroups.{{ $.Res.Name }}, 0, len(req.Get{{ resGoPlural $.Res.Name }}()))
+	for _, pbItem := range req.Get{{ resGoPlural $.Res.Name }}() {
+		d := dto.{{ $.Res.Name }}FromProto(pbItem)
+
+		if d.Metadata.UID.String() == "" || d.Metadata.UID.String() == "00000000-0000-0000-0000-000000000000" {
+			return nil, status.Errorf(codes.InvalidArgument, "metadata.uid is required for UpdIPs")
+		}
+		if d.Metadata.Name == "" {
+			return nil, status.Errorf(codes.InvalidArgument, "metadata.name is required for UpdIPs")
+		}
+		if d.Metadata.Namespace == "" {
+			return nil, status.Errorf(codes.InvalidArgument, "metadata.namespace is required for UpdIPs")
+		}
+
+		items = append(items, d)
+	}
+
+	writer, err := s.repo.Writer(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := writer.SyncHostIPs(ctx, sg.Upsert, items); err != nil {
+		_ = writer.Abort(ctx)
+		return nil, err
+	}
+
+	if err := writer.Commit(ctx); err != nil {
+		return nil, err
+	}
+
+	return &pb.{{ $.Res.Name }}Resp_UpdIPs{}, nil
+}
+{{ else if eq .Name "UpdMetaInfo" }}
+// UpdMetaInfo updates the OS/platform metadata of existing hosts.
+// Requires uid + name + namespace to identify hosts.
+func (s *Service{{ $.Res.Name }}) UpdMetaInfo(ctx context.Context, req *pb.{{ $.Res.Name }}Req_UpdMetaInfo) (*pb.{{ $.Res.Name }}Resp_UpdMetaInfo, error) {
+	items := make([]sgroups.{{ $.Res.Name }}, 0, len(req.Get{{ resGoPlural $.Res.Name }}()))
+	for _, pbItem := range req.Get{{ resGoPlural $.Res.Name }}() {
+		d := dto.{{ $.Res.Name }}FromProto(pbItem)
+
+		if d.Metadata.UID.String() == "" || d.Metadata.UID.String() == "00000000-0000-0000-0000-000000000000" {
+			return nil, status.Errorf(codes.InvalidArgument, "metadata.uid is required for UpdMetaInfo")
+		}
+		if d.Metadata.Name == "" {
+			return nil, status.Errorf(codes.InvalidArgument, "metadata.name is required for UpdMetaInfo")
+		}
+		if d.Metadata.Namespace == "" {
+			return nil, status.Errorf(codes.InvalidArgument, "metadata.namespace is required for UpdMetaInfo")
+		}
+
+		items = append(items, d)
+	}
+
+	writer, err := s.repo.Writer(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := writer.SyncHostInfo(ctx, sg.Upsert, items); err != nil {
+		_ = writer.Abort(ctx)
+		return nil, err
+	}
+
+	if err := writer.Commit(ctx); err != nil {
+		return nil, err
+	}
+
+	return &pb.{{ $.Res.Name }}Resp_UpdMetaInfo{}, nil
+}
+{{ else }}
+// {{ .Name }} is a custom RPC method for {{ $.Res.Name }}.
+func (s *Service{{ $.Res.Name }}) {{ .Name }}(ctx context.Context, req *pb.{{ $.Res.Name }}Req_{{ .Name }}) (*pb.{{ $.Res.Name }}Resp_{{ .Name }}, error) {
+	return nil, status.Errorf(codes.Unimplemented, "{{ .Name }} not implemented")
+}
+{{ end }}
+{{ end }}

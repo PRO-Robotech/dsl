@@ -1,0 +1,275 @@
+version: "1"
+module: github.com/PRO-Robotech/sgroups
+schema: sgroups
+
+# ─── Restrictions: общие правила валидации метаданных ──────────
+restrictions:
+  name:
+    pattern: "^[a-z0-9]([a-z0-9\\-]{0,61}[a-z0-9])?$"
+    max_length: 63
+    description: "lowercase DNS label"
+  namespace:
+    pattern: "^[a-z0-9]([a-z0-9\\-]{0,61}[a-z0-9])?$"
+    max_length: 63
+    description: "lowercase DNS label (same as name)"
+  uid:
+    pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    description: "UUID v4"
+  display_name:
+    max_length: 256
+    description: "human-readable display name"
+  label_key:
+    max_length: 63
+    pattern: "^[a-zA-Z][a-zA-Z0-9_.\\-]*$"
+  label_value:
+    max_length: 256
+
+# ─── Общие типы ───────────────────────────────────────────────
+types:
+  policy_action:
+    kind: enum
+    values: [DENY, ALLOW]
+
+  proto:
+    kind: enum
+    values: [TCP, UDP, ICMP]
+
+  traffic:
+    kind: enum
+    values: [Both, Ingress, Egress]
+
+  ip_family:
+    kind: enum
+    values: [IPv4, IPv6]
+
+  # transport_entry подчиняется OneOf: набор полей зависит от протокола.
+  # oneof_by     — поле-дискриминатор (из родительского transport).
+  # oneof_variants — какие значения дискриминатора активируют какую группу полей.
+  # Поля без oneof_group — общие, присутствуют всегда.
+  transport_entry:
+    kind: composite
+    oneof_by: proto
+    oneof_variants:
+      tcp_udp: [TCP, UDP]   # при proto ∈ {TCP, UDP} → доступны поля группы tcp_udp
+      icmp:    [ICMP]       # при proto = ICMP       → доступны поля группы icmp
+    fields:
+      - { name: description, type: text }
+      - { name: comment,     type: text }
+      - { name: ports,       type: port_ranges,  oneof_group: tcp_udp }
+      - { name: types,       type: "integer[]",  oneof_group: icmp }
+
+  transport:
+    kind: composite
+    fields:
+      - { name: protocol, type: proto }
+      - { name: ip_v,     type: ip_family }
+      - { name: entries,  type: "transport_entry[]" }
+
+# ─── Ресурсы (без Rules) ──────────────────────────────────────
+
+resources:
+  - name: Tenant
+    scope: cluster
+    table: tenant
+    index_prefix: tenant
+    http_path: tenants
+    immutable: [uid, name]
+    list:
+      selectors: res
+      has_refs: false
+    events:
+      channel: resource_Tenant
+
+  - name: AddressGroup
+    scope: namespaced
+    table: address_group
+    index_prefix: address_group
+    http_path: address-groups
+    spec:
+      fields:
+        - name: default_action
+          sql_type: "sgroups.policy_action"
+          go_type: PolicyAction
+          proto_type: string
+          default: "'DENY'"
+          validate: "required, oneof=ALLOW DENY"
+        - name: logs
+          sql_type: bool
+          go_type: bool
+          proto_type: bool
+          default: "false"
+        - name: trace
+          sql_type: bool
+          go_type: bool
+          proto_type: bool
+          default: "false"
+    immutable: [uid, name]
+    has_binding_rev: true
+    list:
+      selectors: res
+      has_refs: true
+      ref_types: [Host, Service, Network, Rule]
+    events: { channel: resource_AddressGroup }
+
+  - name: Network
+    scope: namespaced
+    table: network
+    index_prefix: nw
+    http_path: networks
+    spec:
+      fields:
+        - name: cidr
+          sql_type: cidr
+          sql_column: network
+          go_type: IPNet
+          proto_type: string
+          proto_field: CIDR
+          validate: "required, cidr"
+    immutable: [uid, name]
+    has_binding_rev: true
+    list:
+      selectors: res
+      has_refs: true
+      ref_types: [AddressGroup]
+    events:
+      channel: resource_Network
+
+  - name: Host
+    scope: namespaced
+    table: host
+    index_prefix: host
+    http_path: hosts
+    spec:
+      fields:
+        - name: ips
+          sql_type: jsonb
+          go_type: DualStackIPs
+          proto_type: DualStackIPs
+          output_only: true
+        - name: meta_info
+          sql_type: jsonb
+          go_type: HostInfo
+          proto_type: HostMetaInfo
+          output_only: true
+    immutable: [uid, name]
+    has_binding_rev: true
+    extra_syncers:
+      - { name: HostIPs,  sql_func: sync_host_ipset, fields: [uid, name, namespace, ips] }
+      - { name: HostInfo, sql_func: sync_host_info,  fields: [uid, name, namespace, meta_info] }
+    extra_grpc_methods:
+      - name: UpdIPs
+        scaffold: true
+        http_path: upd-iplist
+        http_verb: POST
+      - name: UpdMetaInfo
+        scaffold: true
+        http_path: upd-metainfo
+        http_verb: POST
+    k8s_subresources:
+      - name: ips
+        field: ips
+        go_type: DualStackIPs
+        k8s_type: DualStackIPs
+        grpc_method: UpdIPs
+      - name: metadata
+        field: meta_info
+        go_type: HostInfo
+        k8s_type: HostMetaInfo
+        grpc_method: UpdMetaInfo
+    list:
+      selectors: res
+      has_refs: true
+      ref_types: [AddressGroup]
+    events: { channel: resource_Host }
+
+  - name: Service
+    scope: namespaced
+    table: service
+    index_prefix: service
+    http_path: services
+    spec:
+      fields:
+        - name: transport
+          sql_type: jsonb
+          go_type: TransportSpec
+          proto_type: Transport
+          validate: "required"
+    immutable: [uid, name]
+    has_binding_rev: true
+    # constraints and triggers for transport validation are added via custom_constraints.sql
+    # after the required PL/pgSQL functions are defined
+    list:
+      selectors: res
+      has_refs: true
+      ref_types: [AddressGroup, Rule]
+    events: { channel: resource_Service }
+
+  - name: HostBinding
+    scope: namespaced
+    kind: binding
+    table: host_binding
+    index_prefix: host_binding
+    http_path: host-bindings
+    refs:
+      - { name: address_group, target: AddressGroup, sql_column: address_group, sql_fk_table: tbl_address_group }
+      - { name: host,          target: Host,         sql_column: host,          sql_fk_table: tbl_host }
+    immutable: [uid, name, address_group, host]
+    cascade_rev:
+      - { parent_table: tbl_host,          ref_column: host }
+      - { parent_table: tbl_address_group, ref_column: address_group }
+    list:
+      selectors: custom
+      has_refs: true
+      ref_types: [Host, AddressGroup]
+    events: { channel: resource_HostBinding }
+
+  - name: NetworkBinding
+    scope: namespaced
+    kind: binding
+    table: network_binding
+    index_prefix: network_binding
+    http_path: network-bindings
+    refs:
+      - { name: address_group, target: AddressGroup, sql_column: address_group, sql_fk_table: tbl_address_group }
+      - { name: network,       target: Network,      sql_column: network,       sql_fk_table: tbl_network }
+    immutable: [uid, name, address_group, network]
+    cascade_rev:
+      - { parent_table: tbl_network,       ref_column: network }
+      - { parent_table: tbl_address_group, ref_column: address_group }
+    list:
+      selectors: custom
+      has_refs: true
+      ref_types: [Network, AddressGroup]
+    events: { channel: resource_NetworkBinding }
+
+  - name: ServiceBinding
+    scope: namespaced
+    kind: binding
+    table: service_binding
+    index_prefix: service_binding
+    http_path: service-bindings
+    refs:
+      - { name: address_group, target: AddressGroup, sql_column: address_group, sql_fk_table: tbl_address_group }
+      - { name: service,       target: Service,      sql_column: service,       sql_fk_table: tbl_service }
+    immutable: [uid, name, address_group, service]
+    cascade_rev:
+      - { parent_table: tbl_service,       ref_column: service }
+      - { parent_table: tbl_address_group, ref_column: address_group }
+    list:
+      selectors: custom
+      has_refs: true
+      ref_types: [Service, AddressGroup]
+    events: { channel: resource_ServiceBinding }
+
+# ─── Ролевая модель ──────────────────────────────────────────
+
+roles:
+  admin:
+    resources: ["*"]
+    verbs: [create, read, update, delete, watch]
+  viewer:
+    resources: ["*"]
+    verbs: [read, watch]
+  network_admin:
+    resources: [Network, NetworkBinding, AddressGroup]
+    verbs: [create, read, update, delete, watch]

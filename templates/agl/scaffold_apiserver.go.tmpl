@@ -1,0 +1,55 @@
+package apiserver
+
+import (
+	"fmt"
+
+	v1alpha1 "{{ .Module }}/pkg/apis/sgroups/v1alpha1"
+	"{{ .Module }}/internal/registry/options"
+	"{{ .Module }}/pkg/client"
+	genericapiserver "k8s.io/apiserver/pkg/server"
+)
+
+// Config holds the API server configuration.
+type Config struct {
+	GenericConfig *genericapiserver.RecommendedConfig
+	GRPCClient    *client.Client
+	StorageOpts   options.StorageOptions
+}
+
+// Server is the aggregated API server.
+type Server struct {
+	GenericAPIServer *genericapiserver.GenericAPIServer
+}
+
+// Complete fills in any unset fields.
+func (cfg *Config) Complete() CompletedConfig {
+	return CompletedConfig{cfg}
+}
+
+// CompletedConfig has all fields set.
+type CompletedConfig struct{ *Config }
+
+// New creates a new API server.
+func (c CompletedConfig) New() (*Server, error) {
+	genericServer, err := c.GenericConfig.Complete().New(
+		"sgroups-k8s-apiserver",
+		genericapiserver.NewEmptyDelegate(),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("create generic server: %w", err)
+	}
+
+	apiGroupInfo := genericapiserver.NewDefaultAPIGroupInfo(
+		v1alpha1.GroupName,
+		v1alpha1.Scheme,
+		v1alpha1.ParameterCodec,
+		v1alpha1.Codecs,
+	)
+	apiGroupInfo.VersionedResourcesStorageMap = buildStorageMap(c.GRPCClient, c.StorageOpts)
+
+	if err := genericServer.InstallAPIGroup(&apiGroupInfo); err != nil {
+		return nil, fmt.Errorf("install api group: %w", err)
+	}
+
+	return &Server{GenericAPIServer: genericServer}, nil
+}

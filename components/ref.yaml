@@ -1,0 +1,6 @@
+components:
+  - name: ref
+    kind: ref
+    test:
+      valid_expr: '{{ .GoType }}{Name: "ref-ok", Namespace: "default"}'
+      zero_expr: "{{ .GoType }}{}"

@@ -1,0 +1,6 @@
+components:
+  - name: jsonb_object
+    kind: jsonb
+    test:
+      valid_expr: "nil"
+      zero_expr: "nil"

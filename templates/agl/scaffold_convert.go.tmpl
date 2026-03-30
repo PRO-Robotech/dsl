@@ -1,0 +1,44 @@
+package convert
+
+import (
+	v1alpha1 "{{ .Module }}/pkg/apis/sgroups/v1alpha1"
+	pb "{{ .Module }}/pkg/api/sgroups/v1"
+)
+
+// {{ .Res.Name }}SpecToProto converts custom spec fields from K8s to proto.
+// This file is generated once — customize here.
+func {{ .Res.Name }}SpecToProto(in *v1alpha1.{{ .Res.Name }}, out *pb.{{ .Res.Name }}) {
+{{- range .Res.Spec.Fields }}
+{{- if eq .GoType "PolicyAction" }}
+	out.Spec.{{ goField .Name }} = string(in.Spec.{{ goField .Name }})
+{{- else if eq .GoType "bool" }}
+	out.Spec.{{ goField .Name }} = in.Spec.{{ goField .Name }}
+{{- else if eq .GoType "IPNet" }}
+	out.Spec.{{ goField .Name }} = in.Spec.{{ goField .Name }}
+{{- else }}
+	// TODO: convert in.Spec.{{ goField .Name }} → out.Spec
+{{- end }}
+{{- end }}
+{{- if not (len .Res.Spec.Fields) }}
+	// No custom spec fields.
+{{- end }}
+}
+
+// {{ .Res.Name }}SpecFromProto converts custom spec fields from proto to K8s.
+// This file is generated once — customize here.
+func {{ .Res.Name }}SpecFromProto(in *pb.{{ .Res.Name }}, out *v1alpha1.{{ .Res.Name }}) {
+{{- range .Res.Spec.Fields }}
+{{- if eq .GoType "PolicyAction" }}
+	out.Spec.{{ goField .Name }} = v1alpha1.Action(in.GetSpec().Get{{ goField .Name }}())
+{{- else if eq .GoType "bool" }}
+	out.Spec.{{ goField .Name }} = in.GetSpec().Get{{ goField .Name }}()
+{{- else if eq .GoType "IPNet" }}
+	out.Spec.{{ goField .Name }} = in.GetSpec().Get{{ goField .Name }}()
+{{- else }}
+	// TODO: convert in.Spec → out.Spec.{{ goField .Name }}
+{{- end }}
+{{- end }}
+{{- if not (len .Res.Spec.Fields) }}
+	// No custom spec fields.
+{{- end }}
+}
