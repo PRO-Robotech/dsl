@@ -7,7 +7,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"{{ .Module }}/internal/apiserver"
-	v1alpha1 "{{ .Module }}/pkg/apis/sgroups/v1alpha1"
+	v1alpha1 "{{ .Module }}/pkg/apis/{{ .Project.Name }}/{{ .Project.APIVersion }}"
 	"{{ .Module }}/internal/registry/options"
 	"{{ .Module }}/pkg/client"
 
@@ -31,14 +31,14 @@ func main() {
 func newCommand() *cobra.Command {
 	o := newOptions()
 	cmd := &cobra.Command{
-		Use:   "sgroups-k8s-apiserver",
+		Use:   "{{ .Project.Name }}-k8s-apiserver",
 		Short: "SGroups Aggregated API Server",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runServer(o, genericapiserver.SetupSignalHandler())
 		},
 	}
 	o.recommended.AddFlags(cmd.Flags())
-	cmd.Flags().StringVar(&o.grpcBackend, "grpc-backend", envOrDefault("GRPC_BACKEND", "sgroups-backend:9006"), "gRPC backend address")
+	cmd.Flags().StringVar(&o.grpcBackend, "grpc-backend", envOrDefault("GRPC_BACKEND", "{{ .Project.Name }}-backend:9006"), "gRPC backend address")
 	return cmd
 }
 

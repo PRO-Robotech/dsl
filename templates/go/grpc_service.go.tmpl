@@ -7,7 +7,7 @@ import (
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 
 	sg "{{ .Module }}/internal/sg-server/repository"
-	pb "{{ .Module }}/pkg/api/sgroups/v1"
+	pb "{{ .Module }}/pkg/api/{{ .Project.Name }}/v1"
 )
 
 // Service{{ .Res.Name }} implements the gRPC {{ .Res.Name }}Service.

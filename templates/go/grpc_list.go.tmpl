@@ -5,8 +5,9 @@ package {{ lower .Res.Name }}
 import (
 	"context"
 
-	pb "{{ .Module }}/pkg/api/sgroups/v1"
+	pb "{{ .Module }}/pkg/api/{{ .Project.Name }}/v1"
 	"{{ .Module }}/internal/sg-server/transport/grpc/service/{{ lower .Res.Name }}/dto"
+	"{{ .Module }}/internal/sg-server/repository"
 )
 
 // List{{ .Res.Name }}s handles the List RPC for {{ .Res.Name }}.
@@ -15,7 +16,21 @@ func (s *Service{{ .Res.Name }}) List{{ .Res.Name }}s(
 	req *pb.{{ .Res.Name }}Req_List,
 ) (*pb.{{ .Res.Name }}Resp_List, error) {
 	reader := s.repo.Reader(ctx)
-	items, err := reader.List{{ .Res.Name }}s(ctx)
+	var opts []repository.ListOption
+	for _, sel := range req.GetSelectors() {
+		if fs := sel.GetFieldSelector(); fs != nil {
+			if fs.GetName() != "" {
+				opts = append(opts, repository.WithName(fs.GetName()))
+			}
+			if fs.GetNamespace() != "" {
+				opts = append(opts, repository.WithNamespace(fs.GetNamespace()))
+			}
+			for k, v := range fs.GetSpecFields() {
+				opts = append(opts, repository.WithSpecField(k, v))
+			}
+		}
+	}
+	items, err := reader.List{{ .Res.Name }}s(ctx, opts...)
 	if err != nil {
 		return nil, err
 	}

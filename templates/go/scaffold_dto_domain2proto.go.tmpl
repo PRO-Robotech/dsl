@@ -1,13 +1,13 @@
 package dto
 
 import (
-	sgroups "{{ .Module }}/internal/shared/domains/sgroups"
-	pb "{{ .Module }}/pkg/api/sgroups/v1"
+	{{ .Project.Name }} "{{ .Module }}/internal/shared/domains/{{ .Project.Name }}"
+	pb "{{ .Module }}/pkg/api/{{ .Project.Name }}/v1"
 )
 
 // {{ .Res.Name }}SpecToProto converts spec-specific fields from domain to proto.
 // This file is generated once — customize spec field mapping here.
-func {{ .Res.Name }}SpecToProto(d sgroups.{{ .Res.Name }}, msg *pb.{{ .Res.Name }}) {
+func {{ .Res.Name }}SpecToProto(d {{ .Project.Name }}.{{ .Res.Name }}, msg *pb.{{ .Res.Name }}) {
 {{- range .Res.Spec.Fields }}
 {{- if eq .GoType "PolicyAction" }}
 	msg.Spec.{{ goField .Name }} = string(d.Spec.{{ goField .Name }})
@@ -30,12 +30,12 @@ func {{ .Res.Name }}SpecToProto(d sgroups.{{ .Res.Name }}, msg *pb.{{ .Res.Name 
 		KernelVersion:   d.{{ goField .Name }}.KernelVersion,
 	}
 {{- else if eq .GoType "TransportSpec" }}
-	if d.Spec.Transport.Protocol != "" {
+	for _, tr := range d.Spec.Transport {
 		t := &pb.Transport{
-			Protocol: string(d.Spec.Transport.Protocol),
-			IpV:      int32(d.Spec.Transport.IPv),
+			Protocol: string(tr.Protocol),
+			IpV:      string(tr.IPv),
 		}
-		for _, e := range d.Spec.Transport.Entries {
+		for _, e := range tr.Entries {
 			entry := &pb.TransportEntry{
 				Description: e.Description,
 				Comment:     e.Comment,
@@ -51,7 +51,7 @@ func {{ .Res.Name }}SpecToProto(d sgroups.{{ .Res.Name }}, msg *pb.{{ .Res.Name 
 			}
 			t.Entries = append(t.Entries, entry)
 		}
-		msg.Spec.Transport = t
+		msg.Spec.Transport = append(msg.Spec.Transport, t)
 	}
 {{- else }}
 	// TODO: map d.Spec.{{ goField .Name }} -> msg.Spec.{{ goField .Name }}

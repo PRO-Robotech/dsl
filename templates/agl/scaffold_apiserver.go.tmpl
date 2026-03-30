@@ -3,7 +3,7 @@ package apiserver
 import (
 	"fmt"
 
-	v1alpha1 "{{ .Module }}/pkg/apis/sgroups/v1alpha1"
+	v1alpha1 "{{ .Module }}/pkg/apis/{{ .Project.Name }}/{{ .Project.APIVersion }}"
 	"{{ .Module }}/internal/registry/options"
 	"{{ .Module }}/pkg/client"
 	genericapiserver "k8s.io/apiserver/pkg/server"
@@ -32,7 +32,7 @@ type CompletedConfig struct{ *Config }
 // New creates a new API server.
 func (c CompletedConfig) New() (*Server, error) {
 	genericServer, err := c.GenericConfig.Complete().New(
-		"sgroups-k8s-apiserver",
+		"{{ .Project.Name }}-k8s-apiserver",
 		genericapiserver.NewEmptyDelegate(),
 	)
 	if err != nil {

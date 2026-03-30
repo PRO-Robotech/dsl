@@ -2,32 +2,32 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: sgroups-backend
+  name: {{ .Project.Name }}-backend
   namespace: {{ .Namespace }}
   labels:
-    app: sgroups-backend
+    app: {{ .Project.Name }}-backend
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: sgroups-backend
+      app: {{ .Project.Name }}-backend
   template:
     metadata:
       labels:
-        app: sgroups-backend
+        app: {{ .Project.Name }}-backend
     spec:
       initContainers:
         - name: goose-migrate
-          image: sgroups-migration:latest
+          image: {{ .Project.Name }}-migration:latest
           imagePullPolicy: IfNotPresent
           env:
             - name: GOOSE_DRIVER
               value: postgres
             - name: GOOSE_DBSTRING
-              value: "host=sgroups-postgres user=user_admin password=admin dbname={{ .DBSchema }} sslmode=disable"
+              value: "host={{ .Project.Name }}-postgres user=user_admin password=admin dbname={{ .DBSchema }} sslmode=disable"
       containers:
         - name: backend
-          image: sgroups-backend:latest
+          image: {{ .Project.Name }}-backend:latest
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 9006
@@ -36,7 +36,7 @@ spec:
               name: health
           env:
             - name: DB_HOST
-              value: sgroups-postgres
+              value: {{ .Project.Name }}-postgres
             - name: DB_PORT
               value: "5432"
             - name: DB_USER
@@ -61,11 +61,11 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: sgroups-backend
+  name: {{ .Project.Name }}-backend
   namespace: {{ .Namespace }}
 spec:
   selector:
-    app: sgroups-backend
+    app: {{ .Project.Name }}-backend
   ports:
     - name: grpc
       port: 9006

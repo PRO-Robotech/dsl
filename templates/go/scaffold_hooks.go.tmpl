@@ -3,9 +3,9 @@ package {{ lower .Res.Name }}
 import (
 	"context"
 
-	sgroups "{{ .Module }}/internal/shared/domains/sgroups"
+	{{ .Project.Name }} "{{ .Module }}/internal/shared/domains/{{ .Project.Name }}"
 	sg "{{ .Module }}/internal/sg-server/repository"
-	pb "{{ .Module }}/pkg/api/sgroups/v1"
+	pb "{{ .Module }}/pkg/api/{{ .Project.Name }}/v1"
 	"{{ .Module }}/internal/sg-server/transport/grpc/service/{{ lower .Res.Name }}/dto"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -19,7 +19,7 @@ import (
 // UpdIPs updates the IP addresses of existing hosts.
 // Requires uid + name + namespace to identify hosts.
 func (s *Service{{ $.Res.Name }}) UpdIPs(ctx context.Context, req *pb.{{ $.Res.Name }}Req_UpdIPs) (*pb.{{ $.Res.Name }}Resp_UpdIPs, error) {
-	items := make([]sgroups.{{ $.Res.Name }}, 0, len(req.Get{{ resGoPlural $.Res.Name }}()))
+	items := make([]{{ $.Project.Name }}.{{ $.Res.Name }}, 0, len(req.Get{{ resGoPlural $.Res.Name }}()))
 	for _, pbItem := range req.Get{{ resGoPlural $.Res.Name }}() {
 		d := dto.{{ $.Res.Name }}FromProto(pbItem)
 
@@ -56,7 +56,7 @@ func (s *Service{{ $.Res.Name }}) UpdIPs(ctx context.Context, req *pb.{{ $.Res.N
 // UpdMetaInfo updates the OS/platform metadata of existing hosts.
 // Requires uid + name + namespace to identify hosts.
 func (s *Service{{ $.Res.Name }}) UpdMetaInfo(ctx context.Context, req *pb.{{ $.Res.Name }}Req_UpdMetaInfo) (*pb.{{ $.Res.Name }}Resp_UpdMetaInfo, error) {
-	items := make([]sgroups.{{ $.Res.Name }}, 0, len(req.Get{{ resGoPlural $.Res.Name }}()))
+	items := make([]{{ $.Project.Name }}.{{ $.Res.Name }}, 0, len(req.Get{{ resGoPlural $.Res.Name }}()))
 	for _, pbItem := range req.Get{{ resGoPlural $.Res.Name }}() {
 		d := dto.{{ $.Res.Name }}FromProto(pbItem)
 

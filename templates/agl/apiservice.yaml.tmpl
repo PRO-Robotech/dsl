@@ -4,7 +4,7 @@ kind: APIService
 metadata:
   name: {{ .APIVersion }}.{{ .APIGroup }}
   annotations:
-    cert-manager.io/inject-ca-from: {{ .Namespace }}/sgroups-k8s-apiserver-cert
+    cert-manager.io/inject-ca-from: {{ .Namespace }}/{{ .Project.Name }}-k8s-apiserver-cert
 spec:
   group: {{ .APIGroup }}
   version: {{ .APIVersion }}
@@ -12,5 +12,5 @@ spec:
   versionPriority: 15
   insecureSkipTLSVerify: true
   service:
-    name: sgroups-k8s-apiserver
+    name: {{ .Project.Name }}-k8s-apiserver
     namespace: {{ .Namespace }}

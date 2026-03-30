@@ -2,13 +2,13 @@
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: sgroups-k8s-apiserver
+  name: {{ .Project.Name }}-k8s-apiserver
   namespace: {{ .Namespace }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: sgroups-k8s-apiserver
+  name: {{ .Project.Name }}-k8s-apiserver
 rules:
   - apiGroups: [""]
     resources: ["namespaces"]
@@ -26,33 +26,33 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: sgroups-k8s-apiserver
+  name: {{ .Project.Name }}-k8s-apiserver
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: sgroups-k8s-apiserver
+  name: {{ .Project.Name }}-k8s-apiserver
 subjects:
   - kind: ServiceAccount
-    name: sgroups-k8s-apiserver
+    name: {{ .Project.Name }}-k8s-apiserver
     namespace: {{ .Namespace }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: sgroups-k8s-apiserver:system:auth-delegator
+  name: {{ .Project.Name }}-k8s-apiserver:system:auth-delegator
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
   name: system:auth-delegator
 subjects:
   - kind: ServiceAccount
-    name: sgroups-k8s-apiserver
+    name: {{ .Project.Name }}-k8s-apiserver
     namespace: {{ .Namespace }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: sgroups-k8s-apiserver-auth-reader
+  name: {{ .Project.Name }}-k8s-apiserver-auth-reader
   namespace: kube-system
 roleRef:
   apiGroup: rbac.authorization.k8s.io
@@ -60,30 +60,30 @@ roleRef:
   name: extension-apiserver-authentication-reader
 subjects:
   - kind: ServiceAccount
-    name: sgroups-k8s-apiserver
+    name: {{ .Project.Name }}-k8s-apiserver
     namespace: {{ .Namespace }}
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: sgroups-k8s-apiserver
+  name: {{ .Project.Name }}-k8s-apiserver
   namespace: {{ .Namespace }}
   labels:
-    app: sgroups-k8s-apiserver
+    app: {{ .Project.Name }}-k8s-apiserver
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: sgroups-k8s-apiserver
+      app: {{ .Project.Name }}-k8s-apiserver
   template:
     metadata:
       labels:
-        app: sgroups-k8s-apiserver
+        app: {{ .Project.Name }}-k8s-apiserver
     spec:
-      serviceAccountName: sgroups-k8s-apiserver
+      serviceAccountName: {{ .Project.Name }}-k8s-apiserver
       containers:
         - name: apiserver
-          image: sgroups-k8s-apiserver:latest
+          image: {{ .Project.Name }}-k8s-apiserver:latest
           imagePullPolicy: IfNotPresent
           args:
             - --secure-port=8443
@@ -93,16 +93,16 @@ spec:
               name: https
           env:
             - name: GRPC_BACKEND
-              value: "sgroups-backend:9006"
+              value: "{{ .Project.Name }}-backend:9006"
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: sgroups-k8s-apiserver
+  name: {{ .Project.Name }}-k8s-apiserver
   namespace: {{ .Namespace }}
 spec:
   selector:
-    app: sgroups-k8s-apiserver
+    app: {{ .Project.Name }}-k8s-apiserver
   ports:
     - name: https
       port: 443

@@ -3,24 +3,81 @@
 package syncer
 
 import (
-	sgroups "{{ .Module }}/internal/shared/domains/sgroups"
+	"context"
+	"fmt"
+
+	"github.com/jackc/pgx/v5"
+
+	{{ $.DomainPkg }} "{{ .Module }}/internal/shared/domains/{{ $.DomainPkg }}"
 )
+
+type syncerConfig struct {
+	sqlFunc     string
+	argsFunc    func(any) ([]any, error)
+	convertFunc func(pgx.Rows) ([]any, error)
+}
+
+type Syncer struct {
+	config syncerConfig
+}
+
+func (s *Syncer) Sync(ctx context.Context, tx pgx.Tx, items []any) ([]any, error) {
+	args, err := s.config.argsFunc(items)
+	if err != nil {
+		return nil, fmt.Errorf("extract args: %w", err)
+	}
+
+	rows, err := tx.Query(ctx, fmt.Sprintf("SELECT * FROM %s($1)", s.config.sqlFunc), args)
+	if err != nil {
+		return nil, fmt.Errorf("call %s: %w", s.config.sqlFunc, err)
+	}
+	defer rows.Close()
+
+	return s.config.convertFunc(rows)
+}
+
+func makeSyncer[T any](cfg syncerConfig) *Syncer {
+	return &Syncer{config: cfg}
+}
 
 {{ range $res := .Resources }}
 {{- if not $res.IsComposite }}
-// {{ $res.Name }}Syncer handles sync operations for {{ $res.Name }}.
-var {{ $res.Name }}Syncer = makeSyncer[sgroups.{{ $res.Name }}](syncerConfig{
+var {{ $res.Name }}Syncer = makeSyncer[{{ $.DomainPkg }}.{{ $res.Name }}](syncerConfig{
 	sqlFunc:     "{{ $.DBSchema }}.sync_{{ $res.Table }}s",
 	argsFunc:    extract{{ $res.Name }}Args,
 	convertFunc: convert{{ $res.Name }}Result,
 })
 {{ end }}
 {{- range $res.ExtraSyncers }}
-// {{ .Name }}Syncer handles sync for {{ $res.Name }}.{{ .Name }}.
-var {{ .Name }}Syncer = makeSyncer[sgroups.{{ $res.Name }}](syncerConfig{
+var {{ .Name }}Syncer = makeSyncer[{{ $.DomainPkg }}.{{ $res.Name }}](syncerConfig{
 	sqlFunc:     "{{ $.DBSchema }}.{{ .SQLFunc }}",
 	argsFunc:    extract{{ .Name }}Args,
 	convertFunc: convert{{ .Name }}Result,
 })
+{{ end }}
+{{- end }}
+
+{{ range $res := .Resources }}
+{{- if not $res.IsComposite }}
+func extract{{ $res.Name }}Args(items any) ([]any, error) {
+	// TODO: implement extraction of {{ $res.Name }} args for sync SQL function
+	return nil, nil
+}
+
+func convert{{ $res.Name }}Result(rows pgx.Rows) ([]any, error) {
+	// TODO: implement conversion of {{ $res.Name }} result rows
+	return nil, nil
+}
+{{ end }}
+{{- range $res.ExtraSyncers }}
+func extract{{ .Name }}Args(items any) ([]any, error) {
+	// TODO: implement extraction of {{ .Name }} args for sync SQL function
+	return nil, nil
+}
+
+func convert{{ .Name }}Result(rows pgx.Rows) ([]any, error) {
+	// TODO: implement conversion of {{ .Name }} result rows
+	return nil, nil
+}
 {{ end }}
 {{- end }}

@@ -1,268 +1,296 @@
 version: "1"
-module: github.com/PRO-Robotech/sgroups
-schema: sgroups
 
-# ─── Restrictions: общие правила валидации метаданных ──────────
+# ─── Project ──────────────────────────────────────────────────
+project:
+  name: sgroups
+  module: github.com/PRO-Robotech/sgroups
+  apiGroup: sgroups.io
+  apiVersion: v1alpha1
+  protoPackage: sgroups.v1
+  dbSchema: sgroups
+
+# ─── Restrictions ─────────────────────────────────────────────
 restrictions:
   name:
     pattern: "^[a-z0-9]([a-z0-9\\-]{0,61}[a-z0-9])?$"
-    max_length: 63
+    maxLength: 63
     description: "lowercase DNS label"
   namespace:
     pattern: "^[a-z0-9]([a-z0-9\\-]{0,61}[a-z0-9])?$"
-    max_length: 63
+    maxLength: 63
     description: "lowercase DNS label (same as name)"
   uid:
     pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
     description: "UUID v4"
-  display_name:
-    max_length: 256
+  displayName:
+    maxLength: 256
     description: "human-readable display name"
-  label_key:
-    max_length: 63
+  labelKey:
+    maxLength: 63
     pattern: "^[a-zA-Z][a-zA-Z0-9_.\\-]*$"
-  label_value:
-    max_length: 256
+  labelValue:
+    maxLength: 256
 
-# ─── Общие типы ───────────────────────────────────────────────
+# ─── Types ────────────────────────────────────────────────────
 types:
-  policy_action:
+  policyAction:
     kind: enum
     values: [DENY, ALLOW]
+    mapping:
+      go: PolicyAction
+      proto: string
 
   proto:
     kind: enum
     values: [TCP, UDP, ICMP]
+    mapping:
+      go: Proto
+      proto: string
 
   traffic:
     kind: enum
     values: [Both, Ingress, Egress]
+    mapping:
+      go: Traffic
+      proto: string
 
-  ip_family:
+  ipFamily:
     kind: enum
     values: [IPv4, IPv6]
+    mapping:
+      go: IPFamily
+      proto: string
 
-  # transport_entry подчиняется OneOf: набор полей зависит от протокола.
-  # oneof_by     — поле-дискриминатор (из родительского transport).
-  # oneof_variants — какие значения дискриминатора активируют какую группу полей.
-  # Поля без oneof_group — общие, присутствуют всегда.
-  transport_entry:
+  cidr:
+    kind: scalar
+    mapping:
+      sql: cidr
+      go: IPNet
+      proto: string
+
+  dualStackIps:
+    kind: scalar
+    k8sName: DualStackIPs
+    mapping:
+      sql: jsonb
+      go: DualStackIPs
+      proto: DualStackIPs
+
+  hostInfo:
+    kind: scalar
+    k8sName: HostMetaInfo
+    mapping:
+      sql: jsonb
+      go: HostInfo
+      proto: HostMetaInfo
+
+  transportSpec:
+    kind: scalar
+    mapping:
+      sql: jsonb
+      go: TransportSpec
+      proto: Transport
+
+  transportEntry:
     kind: composite
-    oneof_by: proto
-    oneof_variants:
-      tcp_udp: [TCP, UDP]   # при proto ∈ {TCP, UDP} → доступны поля группы tcp_udp
-      icmp:    [ICMP]       # при proto = ICMP       → доступны поля группы icmp
+    oneofBy: proto
+    oneofVariants:
+      tcpUdp: [TCP, UDP]
+      icmp: [ICMP]
     fields:
       - { name: description, type: text }
-      - { name: comment,     type: text }
-      - { name: ports,       type: port_ranges,  oneof_group: tcp_udp }
-      - { name: types,       type: "integer[]",  oneof_group: icmp }
+      - { name: comment, type: text }
+      - { name: ports, type: portRanges, oneofGroup: tcpUdp }
+      - { name: types, type: "integer[]", oneofGroup: icmp }
 
   transport:
     kind: composite
     fields:
       - { name: protocol, type: proto }
-      - { name: ip_v,     type: ip_family }
-      - { name: entries,  type: "transport_entry[]" }
+      - { name: ipV, type: ipFamily }
+      - { name: entries, type: "transportEntry[]" }
 
-# ─── Ресурсы (без Rules) ──────────────────────────────────────
-
+# ─── Resources ────────────────────────────────────────────────
 resources:
   - name: Tenant
     scope: cluster
     table: tenant
-    index_prefix: tenant
-    http_path: tenants
+    indexPrefix: tenant
+    httpPath: tenants
     immutable: [uid, name]
     list:
       selectors: res
-      has_refs: false
+      hasRefs: false
     events:
       channel: resource_Tenant
 
   - name: AddressGroup
     scope: namespaced
     table: address_group
-    index_prefix: address_group
-    http_path: address-groups
+    indexPrefix: address_group
+    httpPath: address-groups
     spec:
       fields:
-        - name: default_action
-          sql_type: "sgroups.policy_action"
-          go_type: PolicyAction
-          proto_type: string
+        - name: defaultAction
+          type: policyAction
           default: "'DENY'"
           validate: "required, oneof=ALLOW DENY"
+          selector: true
         - name: logs
-          sql_type: bool
-          go_type: bool
-          proto_type: bool
+          type: bool
           default: "false"
         - name: trace
-          sql_type: bool
-          go_type: bool
-          proto_type: bool
+          type: bool
           default: "false"
     immutable: [uid, name]
-    has_binding_rev: true
+    hasBindingRev: true
     list:
       selectors: res
-      has_refs: true
-      ref_types: [Host, Service, Network, Rule]
+      hasRefs: true
+      refTypes: [Host, Service, Network, Rule]
     events: { channel: resource_AddressGroup }
 
   - name: Network
     scope: namespaced
     table: network
-    index_prefix: nw
-    http_path: networks
+    indexPrefix: nw
+    httpPath: networks
     spec:
       fields:
         - name: cidr
-          sql_type: cidr
-          sql_column: network
-          go_type: IPNet
-          proto_type: string
-          proto_field: CIDR
+          type: cidr
+          sqlColumn: network
+          jsonName: CIDR
           validate: "required, cidr"
     immutable: [uid, name]
-    has_binding_rev: true
+    hasBindingRev: true
     list:
       selectors: res
-      has_refs: true
-      ref_types: [AddressGroup]
+      hasRefs: true
+      refTypes: [AddressGroup]
     events:
       channel: resource_Network
 
   - name: Host
     scope: namespaced
     table: host
-    index_prefix: host
-    http_path: hosts
+    indexPrefix: host
+    httpPath: hosts
     spec:
       fields:
         - name: ips
-          sql_type: jsonb
-          go_type: DualStackIPs
-          proto_type: DualStackIPs
-          output_only: true
-        - name: meta_info
-          sql_type: jsonb
-          go_type: HostInfo
-          proto_type: HostMetaInfo
-          output_only: true
+          type: dualStackIps
+          jsonName: IPs
+          outputOnly: true
+        - name: metaInfo
+          type: hostInfo
+          outputOnly: true
     immutable: [uid, name]
-    has_binding_rev: true
-    extra_syncers:
-      - { name: HostIPs,  sql_func: sync_host_ipset, fields: [uid, name, namespace, ips] }
-      - { name: HostInfo, sql_func: sync_host_info,  fields: [uid, name, namespace, meta_info] }
-    extra_grpc_methods:
+    hasBindingRev: true
+    extraSyncers:
+      - { name: HostIPs, sqlFunc: sync_host_ipset, fields: [uid, name, namespace, ips] }
+      - { name: HostInfo, sqlFunc: sync_host_info, fields: [uid, name, namespace, metaInfo] }
+    extraGrpcMethods:
       - name: UpdIPs
         scaffold: true
-        http_path: upd-iplist
-        http_verb: POST
+        httpPath: upd-iplist
+        httpVerb: POST
       - name: UpdMetaInfo
         scaffold: true
-        http_path: upd-metainfo
-        http_verb: POST
-    k8s_subresources:
+        httpPath: upd-metainfo
+        httpVerb: POST
+    k8sSubresources:
       - name: ips
-        field: ips
-        go_type: DualStackIPs
-        k8s_type: DualStackIPs
-        grpc_method: UpdIPs
-      - name: metadata
-        field: meta_info
-        go_type: HostInfo
-        k8s_type: HostMetaInfo
-        grpc_method: UpdMetaInfo
+        specField: ips
+        grpcMethod: UpdIPs
+      - name: metaInfo
+        specField: metaInfo
+        grpcMethod: UpdMetaInfo
     list:
       selectors: res
-      has_refs: true
-      ref_types: [AddressGroup]
+      hasRefs: true
+      refTypes: [AddressGroup]
     events: { channel: resource_Host }
 
   - name: Service
     scope: namespaced
     table: service
-    index_prefix: service
-    http_path: services
+    indexPrefix: service
+    httpPath: services
     spec:
       fields:
         - name: transport
-          sql_type: jsonb
-          go_type: TransportSpec
-          proto_type: Transport
+          type: transportSpec
+          jsonName: transports
+          repeated: true
           validate: "required"
     immutable: [uid, name]
-    has_binding_rev: true
-    # constraints and triggers for transport validation are added via custom_constraints.sql
-    # after the required PL/pgSQL functions are defined
+    hasBindingRev: true
     list:
       selectors: res
-      has_refs: true
-      ref_types: [AddressGroup, Rule]
+      hasRefs: true
+      refTypes: [AddressGroup, Rule]
     events: { channel: resource_Service }
 
   - name: HostBinding
     scope: namespaced
     kind: binding
     table: host_binding
-    index_prefix: host_binding
-    http_path: host-bindings
+    indexPrefix: host_binding
+    httpPath: host-bindings
     refs:
-      - { name: address_group, target: AddressGroup, sql_column: address_group, sql_fk_table: tbl_address_group }
-      - { name: host,          target: Host,         sql_column: host,          sql_fk_table: tbl_host }
-    immutable: [uid, name, address_group, host]
-    cascade_rev:
-      - { parent_table: tbl_host,          ref_column: host }
-      - { parent_table: tbl_address_group, ref_column: address_group }
+      - { name: addressGroup, target: AddressGroup, sqlColumn: address_group, sqlFkTable: tbl_address_group, selector: true }
+      - { name: host, target: Host, sqlColumn: host, sqlFkTable: tbl_host, selector: true }
+    immutable: [uid, name, addressGroup, host]
+    cascadeRev:
+      - { parentTable: tbl_host, refColumn: host }
+      - { parentTable: tbl_address_group, refColumn: address_group }
     list:
       selectors: custom
-      has_refs: true
-      ref_types: [Host, AddressGroup]
+      hasRefs: true
+      refTypes: [Host, AddressGroup]
     events: { channel: resource_HostBinding }
 
   - name: NetworkBinding
     scope: namespaced
     kind: binding
     table: network_binding
-    index_prefix: network_binding
-    http_path: network-bindings
+    indexPrefix: network_binding
+    httpPath: network-bindings
     refs:
-      - { name: address_group, target: AddressGroup, sql_column: address_group, sql_fk_table: tbl_address_group }
-      - { name: network,       target: Network,      sql_column: network,       sql_fk_table: tbl_network }
-    immutable: [uid, name, address_group, network]
-    cascade_rev:
-      - { parent_table: tbl_network,       ref_column: network }
-      - { parent_table: tbl_address_group, ref_column: address_group }
+      - { name: addressGroup, target: AddressGroup, sqlColumn: address_group, sqlFkTable: tbl_address_group, selector: true }
+      - { name: network, target: Network, sqlColumn: network, sqlFkTable: tbl_network, selector: true }
+    immutable: [uid, name, addressGroup, network]
+    cascadeRev:
+      - { parentTable: tbl_network, refColumn: network }
+      - { parentTable: tbl_address_group, refColumn: address_group }
     list:
       selectors: custom
-      has_refs: true
-      ref_types: [Network, AddressGroup]
+      hasRefs: true
+      refTypes: [Network, AddressGroup]
     events: { channel: resource_NetworkBinding }
 
   - name: ServiceBinding
     scope: namespaced
     kind: binding
     table: service_binding
-    index_prefix: service_binding
-    http_path: service-bindings
+    indexPrefix: service_binding
+    httpPath: service-bindings
+    crossNamespace: true
     refs:
-      - { name: address_group, target: AddressGroup, sql_column: address_group, sql_fk_table: tbl_address_group }
-      - { name: service,       target: Service,      sql_column: service,       sql_fk_table: tbl_service }
-    immutable: [uid, name, address_group, service]
-    cascade_rev:
-      - { parent_table: tbl_service,       ref_column: service }
-      - { parent_table: tbl_address_group, ref_column: address_group }
+      - { name: addressGroup, target: AddressGroup, sqlColumn: address_group, sqlFkTable: tbl_address_group, selector: true }
+      - { name: service, target: Service, sqlColumn: service, sqlFkTable: tbl_service, selector: true }
+    immutable: [uid, name, addressGroup, service]
+    cascadeRev:
+      - { parentTable: tbl_service, refColumn: service }
+      - { parentTable: tbl_address_group, refColumn: address_group }
     list:
       selectors: custom
-      has_refs: true
-      ref_types: [Service, AddressGroup]
+      hasRefs: true
+      refTypes: [Service, AddressGroup]
     events: { channel: resource_ServiceBinding }
 
-# ─── Ролевая модель ──────────────────────────────────────────
-
+# ─── Roles ────────────────────────────────────────────────────
 roles:
   admin:
     resources: ["*"]
@@ -270,6 +298,6 @@ roles:
   viewer:
     resources: ["*"]
     verbs: [read, watch]
-  network_admin:
+  networkAdmin:
     resources: [Network, NetworkBinding, AddressGroup]
     verbs: [create, read, update, delete, watch]

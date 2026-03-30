@@ -3,64 +3,84 @@ package parser
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/PRO-Robotech/cursor/dsl/internal/ir"
 	"gopkg.in/yaml.v3"
 )
 
-// yamlSchema mirrors the YAML DSL structure for unmarshalling.
+// ── YAML structs ────────────────────────────────────────────────
+
 type yamlSchema struct {
-	Version      string                      `yaml:"version"`
-	Module       string                      `yaml:"module"`
-	Schema       string                      `yaml:"schema"`
-	Restrictions map[string]yamlRestriction  `yaml:"restrictions"`
-	Types        map[string]yamlType         `yaml:"types"`
-	Resources    []yamlResource              `yaml:"resources"`
-	Roles        map[string]yamlRole         `yaml:"roles"`
+	Version      string                     `yaml:"version"`
+	Project      yamlProject                `yaml:"project"`
+	Restrictions map[string]yamlRestriction `yaml:"restrictions"`
+	Types        map[string]yamlType        `yaml:"types"`
+	Resources    []yamlResource             `yaml:"resources"`
+	Roles        map[string]yamlRole        `yaml:"roles"`
+}
+
+type yamlProject struct {
+	Name         string `yaml:"name"`
+	Module       string `yaml:"module"`
+	APIGroup     string `yaml:"apiGroup"`
+	APIVersion   string `yaml:"apiVersion"`
+	ProtoPackage string `yaml:"protoPackage"`
+	DBSchema     string `yaml:"dbSchema"`
 }
 
 type yamlRestriction struct {
 	Pattern     string `yaml:"pattern"`
-	MaxLength   int    `yaml:"max_length"`
+	MaxLength   int    `yaml:"maxLength"`
 	Description string `yaml:"description"`
 }
 
 type yamlType struct {
-	Kind           string              `yaml:"kind"`
-	Values         []string            `yaml:"values"`
-	Fields         []yamlTypeField     `yaml:"fields"`
-	OneOfBy        string              `yaml:"oneof_by"`
-	OneOfVariants  map[string][]string `yaml:"oneof_variants"`
-	BaseType       string              `yaml:"base_type"`
-	Constraints    []string            `yaml:"constraints"`
+	Kind          string              `yaml:"kind"`
+	Values        []string            `yaml:"values"`
+	Fields        []yamlTypeField     `yaml:"fields"`
+	OneOfBy       string              `yaml:"oneofBy"`
+	OneOfVariants map[string][]string `yaml:"oneofVariants"`
+	BaseType      string              `yaml:"baseType"`
+	Constraints   []string            `yaml:"constraints"`
+	Mapping       yamlTypeMapping     `yaml:"mapping"`
+	K8sName       string              `yaml:"k8sName"`
+	ProtoName     string              `yaml:"protoName"`
+}
+
+type yamlTypeMapping struct {
+	SQL   string `yaml:"sql"`
+	Go    string `yaml:"go"`
+	Proto string `yaml:"proto"`
 }
 
 type yamlTypeField struct {
 	Name       string `yaml:"name"`
 	Type       string `yaml:"type"`
-	OneOfGroup string `yaml:"oneof_group"`
+	OneOfGroup string `yaml:"oneofGroup"`
 }
 
 type yamlResource struct {
-	Name             string             `yaml:"name"`
-	Scope            string             `yaml:"scope"`
-	Kind             string             `yaml:"kind"`
-	Table            string             `yaml:"table"`
-	IndexPrefix      string             `yaml:"index_prefix"`
-	HTTPPath         string             `yaml:"http_path"`
-	Spec             *yamlSpec          `yaml:"spec"`
-	Immutable        []string           `yaml:"immutable"`
-	HasBindingRev    bool               `yaml:"has_binding_rev"`
-	Constraints      []yamlConstraint   `yaml:"constraints"`
-	Triggers         []yamlTrigger      `yaml:"triggers"`
-	Refs             []yamlRef          `yaml:"refs"`
-	CascadeRev       []yamlCascadeRev   `yaml:"cascade_rev"`
-	List             yamlList           `yaml:"list"`
-	Events           yamlEvents         `yaml:"events"`
-	ExtraSyncers     []yamlExtraSyncer  `yaml:"extra_syncers"`
-	ExtraGRPCMethods  []yamlExtraGRPC      `yaml:"extra_grpc_methods"`
-	K8sSubresources   []yamlK8sSubresource `yaml:"k8s_subresources"`
-	Subtypes          []yamlSubtype        `yaml:"subtypes"`
+	Name             string               `yaml:"name"`
+	Scope            string               `yaml:"scope"`
+	Kind             string               `yaml:"kind"`
+	Table            string               `yaml:"table"`
+	IndexPrefix      string               `yaml:"indexPrefix"`
+	HTTPPath         string               `yaml:"httpPath"`
+	Spec             *yamlSpec            `yaml:"spec"`
+	Immutable        []string             `yaml:"immutable"`
+	HasBindingRev    bool                 `yaml:"hasBindingRev"`
+	CrossNamespace   bool                 `yaml:"crossNamespace"`
+	Constraints      []yamlConstraint     `yaml:"constraints"`
+	Triggers         []yamlTrigger        `yaml:"triggers"`
+	Refs             []yamlRef            `yaml:"refs"`
+	CascadeRev       []yamlCascadeRev     `yaml:"cascadeRev"`
+	List             yamlList             `yaml:"list"`
+	Events           yamlEvents           `yaml:"events"`
+	ExtraSyncers     []yamlExtraSyncer    `yaml:"extraSyncers"`
+	ExtraGRPCMethods []yamlExtraGRPC      `yaml:"extraGrpcMethods"`
+	K8sSubresources  []yamlK8sSubresource `yaml:"k8sSubresources"`
+	Subtypes         []yamlSubtype        `yaml:"subtypes"`
 }
 
 type yamlSpec struct {
@@ -68,15 +88,16 @@ type yamlSpec struct {
 }
 
 type yamlSpecField struct {
-	Name       string `yaml:"name"`
-	SQLType    string `yaml:"sql_type"`
-	SQLColumn  string `yaml:"sql_column"`
-	GoType     string `yaml:"go_type"`
-	ProtoType  string `yaml:"proto_type"`
-	ProtoField string `yaml:"proto_field"`
-	Default    string `yaml:"default"`
-	Validate   string `yaml:"validate"`
-	OutputOnly bool   `yaml:"output_only"`
+	Name         string `yaml:"name"`
+	Type         string `yaml:"type"`
+	SQLColumn    string `yaml:"sqlColumn"`
+	JSONName     string `yaml:"jsonName"`
+	Default      string `yaml:"default"`
+	Validate     string `yaml:"validate"`
+	Repeated     bool   `yaml:"repeated"`
+	Selector     bool   `yaml:"selector"`
+	OutputOnly   bool   `yaml:"outputOnly"`
+	TestSQLValue string `yaml:"testSqlValue"`
 }
 
 type yamlConstraint struct {
@@ -93,20 +114,21 @@ type yamlTrigger struct {
 type yamlRef struct {
 	Name       string `yaml:"name"`
 	Target     string `yaml:"target"`
-	SQLColumn  string `yaml:"sql_column"`
-	SQLFKTable string `yaml:"sql_fk_table"`
+	SQLColumn  string `yaml:"sqlColumn"`
+	SQLFKTable string `yaml:"sqlFkTable"`
+	Selector   bool   `yaml:"selector"`
 }
 
 type yamlCascadeRev struct {
-	ParentTable string `yaml:"parent_table"`
-	RefColumn   string `yaml:"ref_column"`
+	ParentTable string `yaml:"parentTable"`
+	RefColumn   string `yaml:"refColumn"`
 }
 
 type yamlList struct {
 	Selectors string   `yaml:"selectors"`
-	HasRefs   bool     `yaml:"has_refs"`
+	HasRefs   bool     `yaml:"hasRefs"`
 	Parallel  bool     `yaml:"parallel"`
-	RefTypes  []string `yaml:"ref_types"`
+	RefTypes  []string `yaml:"refTypes"`
 }
 
 type yamlEvents struct {
@@ -116,23 +138,21 @@ type yamlEvents struct {
 
 type yamlExtraSyncer struct {
 	Name    string   `yaml:"name"`
-	SQLFunc string   `yaml:"sql_func"`
+	SQLFunc string   `yaml:"sqlFunc"`
 	Fields  []string `yaml:"fields"`
 }
 
 type yamlExtraGRPC struct {
 	Name     string `yaml:"name"`
 	Scaffold bool   `yaml:"scaffold"`
-	HTTPPath string `yaml:"http_path"`
-	HTTPVerb string `yaml:"http_verb"`
+	HTTPPath string `yaml:"httpPath"`
+	HTTPVerb string `yaml:"httpVerb"`
 }
 
 type yamlK8sSubresource struct {
 	Name       string `yaml:"name"`
-	Field      string `yaml:"field"`
-	GoType     string `yaml:"go_type"`
-	K8sType    string `yaml:"k8s_type"`
-	GRPCMethod string `yaml:"grpc_method"`
+	SpecField  string `yaml:"specField"`
+	GRPCMethod string `yaml:"grpcMethod"`
 }
 
 type yamlSubtype struct {
@@ -145,7 +165,63 @@ type yamlRole struct {
 	Verbs     []string `yaml:"verbs"`
 }
 
-// ParseFile reads a YAML DSL file and returns the IR Schema.
+// ── Built-in type mappings ──────────────────────────────────────
+
+var builtinTypes = map[string]ir.TypeMapping{
+	"bool":    {SQL: "bool", Go: "bool", Proto: "bool"},
+	"string":  {SQL: "text", Go: "string", Proto: "string"},
+	"text":    {SQL: "text", Go: "string", Proto: "string"},
+	"int":     {SQL: "integer", Go: "int", Proto: "int32"},
+	"int32":   {SQL: "integer", Go: "int32", Proto: "int32"},
+	"int64":   {SQL: "bigint", Go: "int64", Proto: "int64"},
+	"float64": {SQL: "double precision", Go: "float64", Proto: "double"},
+}
+
+// ── Helpers ─────────────────────────────────────────────────────
+
+func goFieldName(name string) string {
+	parts := strings.Split(name, "_")
+	var result strings.Builder
+	for _, p := range parts {
+		if p == "" {
+			continue
+		}
+		result.WriteString(strings.Title(p)) //nolint:staticcheck
+	}
+	return result.String()
+}
+
+// toPascalCase converts camelCase to PascalCase.
+func toPascalCase(s string) string {
+	if s == "" {
+		return s
+	}
+	// If already starts with uppercase, return as-is.
+	if s[0] >= 'A' && s[0] <= 'Z' {
+		return s
+	}
+	runes := []rune(s)
+	runes[0] = runes[0] - ('a' - 'A')
+	return string(runes)
+}
+
+func toSnakeCase(s string) string {
+	var result strings.Builder
+	for i, r := range s {
+		if r >= 'A' && r <= 'Z' {
+			if i > 0 {
+				result.WriteByte('_')
+			}
+			result.WriteRune(r + ('a' - 'A'))
+		} else {
+			result.WriteRune(r)
+		}
+	}
+	return result.String()
+}
+
+// ── Parse API ───────────────────────────────────────────────────
+
 func ParseFile(path string) (*ir.Schema, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -154,7 +230,6 @@ func ParseFile(path string) (*ir.Schema, error) {
 	return Parse(data)
 }
 
-// Parse unmarshals YAML bytes into an IR Schema.
 func Parse(data []byte) (*ir.Schema, error) {
 	var raw yamlSchema
 	if err := yaml.Unmarshal(data, &raw); err != nil {
@@ -163,11 +238,23 @@ func Parse(data []byte) (*ir.Schema, error) {
 	return convert(raw)
 }
 
+// ── Conversion ──────────────────────────────────────────────────
+
 func convert(raw yamlSchema) (*ir.Schema, error) {
+	proj := ir.ProjectConfig{
+		Name:         raw.Project.Name,
+		Module:       raw.Project.Module,
+		APIGroup:     raw.Project.APIGroup,
+		APIVersion:   raw.Project.APIVersion,
+		ProtoPackage: raw.Project.ProtoPackage,
+		DBSchema:     raw.Project.DBSchema,
+	}
+
 	s := &ir.Schema{
 		Version:      raw.Version,
-		Module:       raw.Module,
-		DBSchema:     raw.Schema,
+		Module:       proj.Module,
+		DBSchema:     proj.DBSchema,
+		Project:      proj,
 		Restrictions: make(map[string]ir.Restriction),
 	}
 
@@ -179,7 +266,41 @@ func convert(raw yamlSchema) (*ir.Schema, error) {
 		}
 	}
 
+	// Build types registry (name -> mapping) for resolving spec field types.
+	typeRegistry := make(map[string]ir.TypeMapping)
+	enumValues := make(map[string][]string)
+
 	for name, t := range raw.Types {
+		k8sName := t.K8sName
+		if k8sName == "" {
+			k8sName = toPascalCase(name)
+		}
+		protoName := t.ProtoName
+		if protoName == "" {
+			protoName = toPascalCase(name)
+		}
+
+		mapping := ir.TypeMapping{
+			SQL:   t.Mapping.SQL,
+			Go:    t.Mapping.Go,
+			Proto: t.Mapping.Proto,
+		}
+
+		// Derive defaults for missing mappings.
+		if mapping.Go == "" {
+			mapping.Go = toPascalCase(name)
+		}
+		if mapping.SQL == "" {
+			if t.Kind == "enum" && raw.Project.DBSchema != "" {
+				mapping.SQL = raw.Project.DBSchema + "." + toSnakeCase(name)
+			} else {
+				mapping.SQL = toSnakeCase(name)
+			}
+		}
+		if mapping.Proto == "" {
+			mapping.Proto = mapping.Go
+		}
+
 		ct := ir.CustomType{
 			Name:          name,
 			Kind:          t.Kind,
@@ -188,6 +309,9 @@ func convert(raw yamlSchema) (*ir.Schema, error) {
 			OneOfVariants: t.OneOfVariants,
 			BaseType:      t.BaseType,
 			Constraints:   t.Constraints,
+			Mapping:       mapping,
+			K8sName:       k8sName,
+			ProtoName:     protoName,
 		}
 		for _, f := range t.Fields {
 			ct.Fields = append(ct.Fields, ir.TypeField{
@@ -197,18 +321,31 @@ func convert(raw yamlSchema) (*ir.Schema, error) {
 			})
 		}
 		s.Types = append(s.Types, ct)
+
+		typeRegistry[name] = mapping
+		if t.Kind == "enum" {
+			enumValues[name] = t.Values
+		}
+	}
+
+	// Merge built-in types into registry (don't override user types).
+	for name, m := range builtinTypes {
+		if _, exists := typeRegistry[name]; !exists {
+			typeRegistry[name] = m
+		}
 	}
 
 	for _, r := range raw.Resources {
 		res := ir.Resource{
-			Name:          r.Name,
-			Scope:         r.Scope,
-			Kind:          r.Kind,
-			Table:         r.Table,
-			IndexPrefix:   r.IndexPrefix,
-			HTTPPath:      r.HTTPPath,
-			Immutable:     r.Immutable,
-			HasBindingRev: r.HasBindingRev,
+			Name:           r.Name,
+			Scope:          r.Scope,
+			Kind:           r.Kind,
+			Table:          r.Table,
+			IndexPrefix:    r.IndexPrefix,
+			HTTPPath:       r.HTTPPath,
+			Immutable:      r.Immutable,
+			HasBindingRev:  r.HasBindingRev,
+			CrossNamespace: r.CrossNamespace,
 			List: ir.ListConfig{
 				Selectors: r.List.Selectors,
 				HasRefs:   r.List.HasRefs,
@@ -223,17 +360,41 @@ func convert(raw yamlSchema) (*ir.Schema, error) {
 
 		if r.Spec != nil {
 			for _, f := range r.Spec.Fields {
-				res.Spec.Fields = append(res.Spec.Fields, ir.SpecField{
-					Name:       f.Name,
-					SQLType:    f.SQLType,
-					SQLColumn:  f.SQLColumn,
-					GoType:     f.GoType,
-					ProtoType:  f.ProtoType,
-					ProtoField: f.ProtoField,
-					Default:    f.Default,
-					Validate:   f.Validate,
-					OutputOnly: f.OutputOnly,
-				})
+				sf := ir.SpecField{
+					Name:         f.Name,
+					Type:         f.Type,
+					SQLColumn:    f.SQLColumn,
+					JSONName:     f.JSONName,
+					Default:      f.Default,
+					Validate:     f.Validate,
+					Repeated:     f.Repeated,
+					Selector:     f.Selector,
+					OutputOnly:   f.OutputOnly,
+					TestSQLValue: f.TestSQLValue,
+				}
+
+				// Resolve type mapping.
+				if m, ok := typeRegistry[f.Type]; ok {
+					sf.SQLType = m.SQL
+					sf.GoType = m.Go
+					sf.ProtoType = m.Proto
+				} else {
+					sf.SQLType = f.Type
+					sf.GoType = f.Type
+					sf.ProtoType = f.Type
+				}
+
+				// Populate enum values.
+				if vals, ok := enumValues[f.Type]; ok {
+					sf.EnumValues = vals
+				}
+
+				// Derive ProtoField from JSONName if set.
+				if f.JSONName != "" {
+					sf.ProtoField = f.JSONName
+				}
+
+				res.Spec.Fields = append(res.Spec.Fields, sf)
 			}
 		}
 
@@ -247,6 +408,7 @@ func convert(raw yamlSchema) (*ir.Schema, error) {
 			res.Refs = append(res.Refs, ir.RefDef{
 				Name: ref.Name, Target: ref.Target,
 				SQLColumn: ref.SQLColumn, SQLFKTable: ref.SQLFKTable,
+				Selector: ref.Selector,
 			})
 		}
 		for _, cr := range r.CascadeRev {
@@ -266,11 +428,31 @@ func convert(raw yamlSchema) (*ir.Schema, error) {
 			})
 		}
 		for _, ks := range r.K8sSubresources {
-			res.K8sSubresources = append(res.K8sSubresources, ir.K8sSubresource{
-				Name: ks.Name, Field: ks.Field,
-				GoType: ks.GoType, K8sType: ks.K8sType,
+			sub := ir.K8sSubresource{
+				Name:       ks.Name,
+				SpecField:  ks.SpecField,
 				GRPCMethod: ks.GRPCMethod,
-			})
+			}
+			// Resolve GoType and K8sType from the linked spec field.
+			for _, sf := range res.Spec.Fields {
+				if sf.Name == ks.SpecField {
+					sub.GoType = sf.GoType
+					if m, ok := typeRegistry[sf.Type]; ok {
+						sub.K8sType = m.Go
+					} else {
+						sub.K8sType = sf.GoType
+					}
+					// Check if there's a custom K8s name for this type.
+					for _, ct := range s.Types {
+						if ct.Name == sf.Type {
+							sub.K8sType = ct.K8sName
+							break
+						}
+					}
+					break
+				}
+			}
+			res.K8sSubresources = append(res.K8sSubresources, sub)
 		}
 		for _, st := range r.Subtypes {
 			res.Subtypes = append(res.Subtypes, ir.Subtype{Name: st.Name, Table: st.Table})

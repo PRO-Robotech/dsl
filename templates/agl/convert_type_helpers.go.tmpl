@@ -4,7 +4,7 @@ package convert
 
 import (
 	v1alpha1 "{{ $.Module }}/pkg/apis/{{ $.Project.Name }}/{{ $.Project.APIVersion }}"
-	pb "{{ $.Module }}/pkg/api/{{ $.Project.ProtoPackage }}"
+	pb "{{ $.Module }}/pkg/api/{{ $.Project.Name }}/v1"
 )
 {{ range $ct := .Types }}
 {{- if eq $ct.Kind "composite" }}
@@ -13,9 +13,7 @@ func {{ goField $ct.K8sName }}K8sToProto(src v1alpha1.{{ $ct.K8sName }}) *pb.{{ 
 	dst := &pb.{{ $ct.ProtoName }}{
 {{- range $ct.Fields }}
 {{- if not .OneOfGroup }}
-{{- if isEnumType .Type }}
-		{{ goField .Name }}: string(src.{{ goField .Name }}),
-{{- else if isCompositeType .Type }}
+{{- if isCompositeType .Type }}
 {{- /* nested composite — handled below */}}
 {{- else }}
 		{{ goField .Name }}: src.{{ goField .Name }},
@@ -65,9 +63,7 @@ func {{ goField $ct.K8sName }}ProtoToK8s(src *pb.{{ $ct.ProtoName }}) v1alpha1.{
 	dst := v1alpha1.{{ $ct.K8sName }}{
 {{- range $ct.Fields }}
 {{- if not .OneOfGroup }}
-{{- if isEnumType .Type }}
-		{{ goField .Name }}: v1alpha1.{{ k8sTypeName .Type }}(src.Get{{ goField .Name }}()),
-{{- else if isCompositeType .Type }}
+{{- if isCompositeType .Type }}
 {{- /* nested composite — handled below */}}
 {{- else }}
 		{{ goField .Name }}: src.Get{{ goField .Name }}(),
@@ -114,3 +110,45 @@ func {{ goField $ct.K8sName }}ProtoToK8s(src *pb.{{ $ct.ProtoName }}) v1alpha1.{
 }
 {{- end }}
 {{- end }}
+
+func DualStackIPsK8sToProto(src v1alpha1.DualStackIPs) *pb.DualStackIPs {
+	return &pb.DualStackIPs{
+		Ipv4: src.IPv4,
+		Ipv6: src.IPv6,
+	}
+}
+
+func DualStackIPsProtoToK8s(src *pb.DualStackIPs) v1alpha1.DualStackIPs {
+	if src == nil {
+		return v1alpha1.DualStackIPs{}
+	}
+	return v1alpha1.DualStackIPs{
+		IPv4: src.GetIpv4(),
+		IPv6: src.GetIpv6(),
+	}
+}
+
+func HostMetaInfoK8sToProto(src v1alpha1.HostMetaInfo) *pb.HostMetaInfo {
+	return &pb.HostMetaInfo{
+		HostName:        src.HostName,
+		Os:              src.OS,
+		Platform:        src.Platform,
+		PlatformFamily:  src.PlatformFamily,
+		PlatformVersion: src.PlatformVersion,
+		KernelVersion:   src.KernelVersion,
+	}
+}
+
+func HostMetaInfoProtoToK8s(src *pb.HostMetaInfo) v1alpha1.HostMetaInfo {
+	if src == nil {
+		return v1alpha1.HostMetaInfo{}
+	}
+	return v1alpha1.HostMetaInfo{
+		HostName:        src.GetHostName(),
+		OS:              src.GetOs(),
+		Platform:        src.GetPlatform(),
+		PlatformFamily:  src.GetPlatformFamily(),
+		PlatformVersion: src.GetPlatformVersion(),
+		KernelVersion:   src.GetKernelVersion(),
+	}
+}

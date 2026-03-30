@@ -5,9 +5,9 @@ package {{ lower .Res.Name }}
 import (
 	"context"
 
-	sgroups "{{ .Module }}/internal/shared/domains/sgroups"
+	{{ .Project.Name }} "{{ .Module }}/internal/shared/domains/{{ .Project.Name }}"
 	sg "{{ .Module }}/internal/sg-server/repository"
-	pb "{{ .Module }}/pkg/api/sgroups/v1"
+	pb "{{ .Module }}/pkg/api/{{ .Project.Name }}/v1"
 	"{{ .Module }}/internal/sg-server/transport/grpc/service/{{ lower .Res.Name }}/dto"
 )
 
@@ -21,7 +21,7 @@ func (s *Service{{ .Res.Name }}) Delete{{ .Res.Name }}s(
 		return nil, err
 	}
 
-	items := make([]sgroups.{{ .Res.Name }}, 0, len(req.Get{{ resGoPlural .Res.Name }}()))
+	items := make([]{{ .Project.Name }}.{{ .Res.Name }}, 0, len(req.Get{{ resGoPlural .Res.Name }}()))
 	for _, pbItem := range req.Get{{ resGoPlural .Res.Name }}() {
 		items = append(items, dto.{{ .Res.Name }}FromProto(pbItem))
 	}

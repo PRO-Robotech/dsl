@@ -11,10 +11,10 @@ func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenA
 	defs := make(map[string]common.OpenAPIDefinition)
 
 {{ range $res := .Resources }}
-	defs["{{ $.Module }}/pkg/apis/sgroups/v1alpha1.{{ $res.Name }}"] = common.OpenAPIDefinition{
+	defs["{{ $.Module }}/pkg/apis/{{ $.Project.Name }}/{{ $.Project.APIVersion }}.{{ $res.Name }}"] = common.OpenAPIDefinition{
 		Schema: spec.Schema{
 			SchemaProps: spec.SchemaProps{
-				Description: "{{ $res.Name }} is a sgroups.io resource.",
+				Description: "{{ $res.Name }} is a {{ $.Project.APIGroup }} resource.",
 				Type: []string{"object"},
 				Properties: map[string]spec.Schema{
 					"apiVersion": {SchemaProps: spec.SchemaProps{Type: []string{"string"}}},
@@ -23,18 +23,23 @@ func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenA
 						Ref: ref("k8s.io/apimachinery/pkg/apis/meta/v1.ObjectMeta"),
 					}},
 					"spec": {SchemaProps: spec.SchemaProps{
-						Ref: ref("{{ $.Module }}/pkg/apis/sgroups/v1alpha1.{{ $res.Name }}Spec"),
+						Ref: ref("{{ $.Module }}/pkg/apis/{{ $.Project.Name }}/{{ $.Project.APIVersion }}.{{ $res.Name }}Spec"),
 					}},
+{{- range $res.Spec.Fields }}
+{{- if .OutputOnly }}
+					"{{ .JSONName }}": {SchemaProps: spec.SchemaProps{Type: []string{"object"}}},
+{{- end }}
+{{- end }}
 				},
 			},
 		},
 		Dependencies: []string{
 			"k8s.io/apimachinery/pkg/apis/meta/v1.ObjectMeta",
-			"{{ $.Module }}/pkg/apis/sgroups/v1alpha1.{{ $res.Name }}Spec",
+			"{{ $.Module }}/pkg/apis/{{ $.Project.Name }}/{{ $.Project.APIVersion }}.{{ $res.Name }}Spec",
 		},
 	}
 
-	defs["{{ $.Module }}/pkg/apis/sgroups/v1alpha1.{{ $res.Name }}List"] = common.OpenAPIDefinition{
+	defs["{{ $.Module }}/pkg/apis/{{ $.Project.Name }}/{{ $.Project.APIVersion }}.{{ $res.Name }}List"] = common.OpenAPIDefinition{
 		Schema: spec.Schema{
 			SchemaProps: spec.SchemaProps{
 				Description: "{{ $res.Name }}List is a list of {{ $res.Name }} resources.",
@@ -48,7 +53,7 @@ func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenA
 					"items": {SchemaProps: spec.SchemaProps{
 						Type: []string{"array"},
 						Items: &spec.SchemaOrArray{Schema: &spec.Schema{SchemaProps: spec.SchemaProps{
-							Ref: ref("{{ $.Module }}/pkg/apis/sgroups/v1alpha1.{{ $res.Name }}"),
+							Ref: ref("{{ $.Module }}/pkg/apis/{{ $.Project.Name }}/{{ $.Project.APIVersion }}.{{ $res.Name }}"),
 						}}},
 					}},
 				},
@@ -57,11 +62,11 @@ func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenA
 		},
 		Dependencies: []string{
 			"k8s.io/apimachinery/pkg/apis/meta/v1.ListMeta",
-			"{{ $.Module }}/pkg/apis/sgroups/v1alpha1.{{ $res.Name }}",
+			"{{ $.Module }}/pkg/apis/{{ $.Project.Name }}/{{ $.Project.APIVersion }}.{{ $res.Name }}",
 		},
 	}
 
-	defs["{{ $.Module }}/pkg/apis/sgroups/v1alpha1.{{ $res.Name }}Spec"] = common.OpenAPIDefinition{
+	defs["{{ $.Module }}/pkg/apis/{{ $.Project.Name }}/{{ $.Project.APIVersion }}.{{ $res.Name }}Spec"] = common.OpenAPIDefinition{
 		Schema: spec.Schema{
 			SchemaProps: spec.SchemaProps{
 				Description: "{{ $res.Name }}Spec defines the desired state.",
@@ -78,7 +83,12 @@ func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenA
 {{- if $res.IsBinding }}
 {{- range $res.Refs }}
 					"{{ .Name }}": {SchemaProps: spec.SchemaProps{
-						Ref: ref("{{ $.Module }}/pkg/apis/sgroups/v1alpha1.ResourceIdentifier"),
+						Type: []string{"object"},
+						Properties: map[string]spec.Schema{
+							"name":      {SchemaProps: spec.SchemaProps{Type: []string{"string"}}},
+							"namespace": {SchemaProps: spec.SchemaProps{Type: []string{"string"}}},
+						},
+						Required: []string{"name"},
 					}},
 {{- end }}
 {{- end }}
@@ -89,7 +99,7 @@ func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenA
 
 {{- range $res.K8sSubresources }}
 
-	defs["{{ $.Module }}/pkg/apis/sgroups/v1alpha1.{{ $res.Name }}{{ title .Name }}"] = common.OpenAPIDefinition{
+	defs["{{ $.Module }}/pkg/apis/{{ $.Project.Name }}/{{ $.Project.APIVersion }}.{{ $res.Name }}{{ title .Name }}"] = common.OpenAPIDefinition{
 		Schema: spec.Schema{
 			SchemaProps: spec.SchemaProps{
 				Description: "{{ $res.Name }}{{ title .Name }} is a sub-resource.",
@@ -110,7 +120,7 @@ func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenA
 {{- end }}
 {{ end }}
 
-	defs["{{ .Module }}/pkg/apis/sgroups/v1alpha1.ResourceIdentifier"] = common.OpenAPIDefinition{
+	defs["{{ .Module }}/pkg/apis/{{ $.Project.Name }}/{{ $.Project.APIVersion }}.ResourceIdentifier"] = common.OpenAPIDefinition{
 		Schema: spec.Schema{
 			SchemaProps: spec.SchemaProps{
 				Type: []string{"object"},

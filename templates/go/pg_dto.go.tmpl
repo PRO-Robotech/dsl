@@ -3,74 +3,134 @@
 package dto
 
 import (
-	sgroups "{{ .Module }}/internal/shared/domains/sgroups"
+	"encoding/json"
+
+	"github.com/jackc/pgx/v5/pgtype"
+
+	{{ $.DomainPkg }} "{{ .Module }}/internal/shared/domains/{{ $.DomainPkg }}"
 	pgdomain "{{ .Module }}/internal/sg-server/repository/pg/domain"
 )
+
+var _ = json.Marshal
+
+func hstoreFromMap(m map[string]string) pgtype.Hstore {
+	if m == nil {
+		return nil
+	}
+	h := make(pgtype.Hstore, len(m))
+	for k, v := range m {
+		val := v
+		h[k] = &val
+	}
+	return h
+}
+
+func mapFromHstore(h pgtype.Hstore) map[string]string {
+	if h == nil {
+		return nil
+	}
+	m := make(map[string]string, len(h))
+	for k, v := range h {
+		if v != nil {
+			m[k] = *v
+		}
+	}
+	return m
+}
 
 {{ range .Resources }}
 {{- if not .IsComposite }}
 // {{ .Name }}ToPG converts a domain {{ .Name }} to its PG representation.
-func {{ .Name }}ToPG(d sgroups.{{ .Name }}) pgdomain.PG{{ .Name }} {
+func {{ .Name }}ToPG(d {{ $.DomainPkg }}.{{ .Name }}) pgdomain.PG{{ .Name }} {
 	pg := pgdomain.PG{{ .Name }}{
-		UID:              d.UID,
-		Name:             d.Name,
+		UID:              d.Metadata.UID,
+		Name:             d.Metadata.Name,
 {{- if .IsNamespaced }}
-		Namespace:        d.Namespace,
+		Namespace:        d.Metadata.Namespace,
 {{- end }}
 {{- if .IsBinding }}
 {{- range .Refs }}
-		{{ goField .Name }}:  d.{{ goField .Name }},
+		{{ goField .Name }}:  d.Spec.{{ goField .Name }}.Name,
 {{- end }}
 {{- end }}
-		DisplayName:      d.DisplayName,
-		Description:      d.Description,
-		Comment:          d.Comment,
-		Labels:           hstoreFromMap(d.Labels),
-		Annotations:      hstoreFromMap(d.Annotations),
+		DisplayName:      d.Spec.DisplayName,
+		Description:      d.Spec.Description,
+		Comment:          d.Spec.Comment,
+		Labels:           hstoreFromMap(d.Metadata.Labels),
+		Annotations:      hstoreFromMap(d.Metadata.Annotations),
 {{- if .HasBindingRev }}
 		BindingRev:       d.BindingRev,
 {{- end }}
-		ResourceVersion:  d.ResourceVersion,
-		CreationTimestamp: d.CreationTimestamp,
+		ResourceVersion:  d.Metadata.ResourceVersion,
+		CreationTimestamp: d.Metadata.CreationTimestamp,
 	}
 {{- range .Spec.Fields }}
+{{- if not .OutputOnly }}
+{{- if eq .SQLType "jsonb" }}
+	if b, err := json.Marshal(d.Spec.{{ goField .Name }}); err == nil {
+		pg.{{ goField .Name }} = b
+	}
+{{- else if eq .SQLType "cidr" }}
+	pg.{{ goField .Name }} = d.Spec.{{ goField .Name }}.String()
+{{- else if contains .SQLType "." }}
+	pg.{{ goField .Name }} = string(d.Spec.{{ goField .Name }})
+{{- else }}
 	pg.{{ goField .Name }} = d.Spec.{{ goField .Name }}
+{{- end }}
+{{- end }}
 {{- end }}
 	return pg
 }
 
 // {{ .Name }}FromPG converts a PG {{ .Name }} to its domain representation.
-func {{ .Name }}FromPG(pg pgdomain.PG{{ .Name }}) sgroups.{{ .Name }} {
-	d := sgroups.{{ .Name }}{
-		{{ .Name }}Metadata: sgroups.{{ .Name }}Metadata{
+func {{ .Name }}FromPG(pg pgdomain.PG{{ .Name }}) {{ $.DomainPkg }}.{{ .Name }} {
+	d := {{ $.DomainPkg }}.{{ .Name }}{
+		Metadata: {{ $.DomainPkg }}.{{ .Name }}Metadata{
 			UID:              pg.UID,
 			Name:             pg.Name,
 {{- if .IsNamespaced }}
 			Namespace:        pg.Namespace,
 {{- end }}
-			DisplayName:      pg.DisplayName,
-			Description:      pg.Description,
-			Comment:          pg.Comment,
 			Labels:           mapFromHstore(pg.Labels),
 			Annotations:      mapFromHstore(pg.Annotations),
-{{- if .HasBindingRev }}
-			BindingRev:       pg.BindingRev,
-{{- end }}
 			ResourceVersion:  pg.ResourceVersion,
 			CreationTimestamp: pg.CreationTimestamp,
 		},
+		Spec: {{ $.DomainPkg }}.{{ .Name }}Spec{
+			DisplayName: pg.DisplayName,
+			Description: pg.Description,
+			Comment:     pg.Comment,
+{{- range .Spec.Fields }}
+{{- if not .OutputOnly }}
+{{- if eq .SQLType "jsonb" }}
+{{- else if eq .SQLType "cidr" }}
+{{- else if contains .SQLType "." }}
+			{{ goField .Name }}: {{ $.DomainPkg }}.{{ .GoType }}(pg.{{ goField .Name }}),
+{{- else }}
+			{{ goField .Name }}: pg.{{ goField .Name }},
+{{- end }}
+{{- end }}
+{{- end }}
+		},
+{{- if .HasBindingRev }}
+		BindingRev: pg.BindingRev,
+{{- end }}
 	}
+{{- range .Spec.Fields }}
+{{- if not .OutputOnly }}
+{{- if eq .SQLType "jsonb" }}
+	if len(pg.{{ goField .Name }}) > 0 {
+		_ = json.Unmarshal(pg.{{ goField .Name }}, &d.Spec.{{ goField .Name }})
+	}
+{{- else if eq .SQLType "cidr" }}
+	d.Spec.{{ goField .Name }} = {{ $.DomainPkg }}.ParseIPNet(pg.{{ goField .Name }})
+{{- end }}
+{{- end }}
+{{- end }}
 {{- if .IsBinding }}
 {{- range .Refs }}
-	d.{{ goField .Name }} = pg.{{ goField .Name }}
+	d.Spec.{{ goField .Name }} = {{ $.DomainPkg }}.ResourceReference{Name: pg.{{ goField .Name }}}
 {{- end }}
-{{- end }}
-{{- if len .Spec.Fields }}
-	d.Spec = sgroups.{{ .Name }}Spec{
-{{- range .Spec.Fields }}
-		{{ goField .Name }}: pg.{{ goField .Name }},
-{{- end }}
-	}
 {{- end }}
 	return d
 }

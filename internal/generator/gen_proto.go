@@ -8,7 +8,6 @@ import (
 	"github.com/PRO-Robotech/cursor/dsl/internal/ir"
 )
 
-// ProtoField represents a field in a proto message with its field number.
 type ProtoField struct {
 	Name     string
 	Type     string
@@ -18,20 +17,17 @@ type ProtoField struct {
 	MapValue string
 }
 
-// ProtoResource is a per-resource data structure for proto templates.
 type ProtoResource struct {
 	ir.Resource
 	SpecFields []ProtoField
 	RefFields  []ProtoField
 }
 
-// ProtoCompositeResource represents a composite resource in proto.
 type ProtoCompositeResource struct {
 	ir.Resource
 	Subtypes []ir.Subtype
 }
 
-// ProtoExtraMethod represents an extra gRPC method for proto generation.
 type ProtoExtraMethod struct {
 	ResourceName string
 	MethodName   string
@@ -40,13 +36,17 @@ type ProtoExtraMethod struct {
 
 type protoTemplateData struct {
 	Module             string
+	Project            ir.ProjectConfig
 	Resources          []ProtoResource
 	CompositeResources []ProtoCompositeResource
 	ExtraMethods       []ProtoExtraMethod
 }
 
 func (g *Generator) buildProtoData() protoTemplateData {
-	data := protoTemplateData{Module: g.Schema.Module}
+	data := protoTemplateData{
+		Module:  g.Schema.Module,
+		Project: g.Schema.Project,
+	}
 
 	for i := range g.Schema.Resources {
 		res := &g.Schema.Resources[i]
@@ -74,6 +74,9 @@ func (g *Generator) buildProtoData() protoTemplateData {
 			pt := f.ProtoType
 			if pt == "" {
 				pt = "string"
+			}
+			if f.Repeated {
+				pt = "repeated " + pt
 			}
 			pr.SpecFields = append(pr.SpecFields, ProtoField{
 				Name:   toSnakeCase(f.Name),
@@ -106,7 +109,6 @@ func (g *Generator) loadProtoTemplate(name string) (string, error) {
 	return string(data), nil
 }
 
-// GenerateProto produces all .proto files.
 func (g *Generator) GenerateProto() error {
 	data := g.buildProtoData()
 
@@ -119,7 +121,36 @@ func (g *Generator) GenerateProto() error {
 	if err := g.generateProtoServices(data); err != nil {
 		return err
 	}
+	if err := g.generateGoogleAPIProtos(); err != nil {
+		return err
+	}
 	return nil
+}
+
+func (g *Generator) generateGoogleAPIProtos() error {
+	annotations := `syntax = "proto3";
+package google.api;
+import "google/api/http.proto";
+import "google/protobuf/descriptor.proto";
+option go_package = "google.golang.org/genproto/googleapis/api/annotations;annotations";
+extend google.protobuf.MethodOptions { HttpRule http = 72295728; }
+`
+	if err := g.writeGen("api/proto/google/api/annotations.proto", annotations); err != nil {
+		return err
+	}
+
+	http := `syntax = "proto3";
+package google.api;
+option go_package = "google.golang.org/genproto/googleapis/api/annotations;annotations";
+message Http { repeated HttpRule rules = 1; bool fully_decode_reserved_expansion = 2; }
+message HttpRule {
+  string selector = 1;
+  oneof pattern { string get = 2; string put = 3; string post = 4; string delete = 5; string patch = 6; CustomHttpPattern custom = 8; }
+  string body = 7; string response_body = 12; repeated HttpRule additional_bindings = 11;
+}
+message CustomHttpPattern { string kind = 1; string path = 2; }
+`
+	return g.writeGen("api/proto/google/api/http.proto", http)
 }
 
 func (g *Generator) generateProtoDomains(data protoTemplateData) error {
@@ -131,7 +162,8 @@ func (g *Generator) generateProtoDomains(data protoTemplateData) error {
 	if err != nil {
 		return err
 	}
-	return g.writeGen("api/proto/sgroups/v1/domains_gen.proto", out)
+	proj := g.Schema.Project
+	return g.writeGen(fmt.Sprintf("api/proto/%s/v1/domains_gen.proto", proj.Name), out)
 }
 
 func (g *Generator) generateProtoQueries(data protoTemplateData) error {
@@ -143,7 +175,8 @@ func (g *Generator) generateProtoQueries(data protoTemplateData) error {
 	if err != nil {
 		return err
 	}
-	return g.writeGen("api/proto/sgroups/v1/queries_gen.proto", out)
+	proj := g.Schema.Project
+	return g.writeGen(fmt.Sprintf("api/proto/%s/v1/queries_gen.proto", proj.Name), out)
 }
 
 func (g *Generator) generateProtoServices(data protoTemplateData) error {
@@ -155,10 +188,10 @@ func (g *Generator) generateProtoServices(data protoTemplateData) error {
 	if err != nil {
 		return err
 	}
-	return g.writeGen("api/proto/sgroups/v1/services_gen.proto", out)
+	proj := g.Schema.Project
+	return g.writeGen(fmt.Sprintf("api/proto/%s/v1/services_gen.proto", proj.Name), out)
 }
 
-// resPlural returns a lowercase plural form for proto field names.
 func resPlural(name string) string {
 	sn := toSnakeCase(name)
 	if strings.HasSuffix(sn, "s") {
@@ -167,12 +200,10 @@ func resPlural(name string) string {
 	return sn + "s"
 }
 
-// resGoPlural returns the CamelCase plural form used by protobuf Go getters.
 func resGoPlural(name string) string {
 	return goFieldName(resPlural(name))
 }
 
-// httpPathRes returns the REST v2 path for a resource.
 func httpPathRes(res ProtoResource) string {
 	if res.HTTPPath != "" {
 		return res.HTTPPath
@@ -180,7 +211,6 @@ func httpPathRes(res ProtoResource) string {
 	return strings.ToLower(res.Name) + "s"
 }
 
-// httpPathComposite returns the REST v2 path for a composite resource.
 func httpPathComposite(res ProtoCompositeResource) string {
 	if res.HTTPPath != "" {
 		return res.HTTPPath

@@ -16,9 +16,10 @@ import (
 
 // Selection captures the filtering criteria from K8s list/watch options.
 type Selection struct {
-	Name      string
-	Namespace string
-	Labels    map[string]string
+	Name       string
+	Namespace  string
+	Labels     map[string]string
+	SpecFields map[string]string
 }
 
 // SelectionFromContext extracts namespace from request context.
@@ -27,12 +28,38 @@ func SelectionFromContext(ctx context.Context) Selection {
 	return Selection{Namespace: ns}
 }
 
-// SelectionFromOptions extracts name, namespace, and labels from list options.
+// SelectorFields lists all spec/ref field names that support field selectors.
+var SelectorFields = []string{
+{{- range $res := .Resources }}
+{{- range $res.Spec.Fields }}
+{{- if .Selector }}
+	"{{ camelCase .Name }}",
+{{- end }}
+{{- end }}
+{{- if $res.IsBinding }}
+{{- range $res.Refs }}
+{{- if .Selector }}
+	"{{ .Name }}",
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
+}
+
+// SelectionFromOptions extracts name, namespace, labels and spec fields from list options.
 func SelectionFromOptions(ctx context.Context, opts *metainternalversion.ListOptions) Selection {
 	sel := SelectionFromContext(ctx)
 	if opts != nil && opts.FieldSelector != nil {
 		if val, ok := opts.FieldSelector.RequiresExactMatch("metadata.name"); ok {
 			sel.Name = val
+		}
+		for _, f := range SelectorFields {
+			if val, ok := opts.FieldSelector.RequiresExactMatch("spec." + f); ok {
+				if sel.SpecFields == nil {
+					sel.SpecFields = make(map[string]string)
+				}
+				sel.SpecFields[f] = val
+			}
 		}
 	}
 	if opts != nil && opts.LabelSelector != nil {
@@ -51,16 +78,22 @@ func NamespaceFromContext(ctx context.Context) string {
 	return ns
 }
 
-// ExtractSingle extracts a single item from a list, returning NotFound if absent.
+// ExtractSingle extracts a single item from a list by matching name, returning NotFound if absent.
 func ExtractSingle(list runtime.Object, gr schema.GroupResource, name string) (runtime.Object, error) {
 	items, err := extractItems(list)
 	if err != nil {
 		return nil, err
 	}
-	if len(items) == 0 {
-		return nil, errors.NewNotFound(gr, name)
+	for _, item := range items {
+		accessor, aErr := meta.Accessor(item)
+		if aErr != nil {
+			continue
+		}
+		if accessor.GetName() == name {
+			return item, nil
+		}
 	}
-	return items[0], nil
+	return nil, errors.NewNotFound(gr, name)
 }
 
 func extractItems(list runtime.Object) ([]runtime.Object, error) {

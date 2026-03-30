@@ -2,9 +2,9 @@
 
 syntax = "proto3";
 
-package sgroups.v1;
+package {{ .Project.ProtoPackage }};
 
-option go_package = "{{ .Module }}/pkg/api/sgroups/v1";
+option go_package = "{{ .Module }}/pkg/api/{{ .Project.Name }}/v1";
 
 import "google/protobuf/timestamp.proto";
 
@@ -69,7 +69,7 @@ message ICMPTypes {
 // Transport describes a protocol + IP family + entries.
 message Transport {
   string protocol = 1;
-  int32 ip_v = 2;
+  string ip_v = 2;
   repeated TransportEntry entries = 3;
 }
 

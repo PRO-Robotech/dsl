@@ -3,13 +3,13 @@
 package dto
 
 import (
-	sgroups "{{ .Module }}/internal/shared/domains/sgroups"
-	pb "{{ .Module }}/pkg/api/sgroups/v1"
+	{{ .Project.Name }} "{{ .Module }}/internal/shared/domains/{{ .Project.Name }}"
+	pb "{{ .Module }}/pkg/api/{{ .Project.Name }}/v1"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // {{ .Res.Name }}ToProto converts a domain {{ .Res.Name }} to its protobuf representation.
-func {{ .Res.Name }}ToProto(d sgroups.{{ .Res.Name }}) *pb.{{ .Res.Name }} {
+func {{ .Res.Name }}ToProto(d {{ .Project.Name }}.{{ .Res.Name }}) *pb.{{ .Res.Name }} {
 	msg := &pb.{{ .Res.Name }}{
 		Metadata: &pb.ResourceMetadata{
 			Uid:              d.Metadata.UID.String(),

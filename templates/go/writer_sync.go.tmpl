@@ -6,13 +6,13 @@ import (
 	"context"
 	"fmt"
 
-	sgroups "{{ .Module }}/internal/shared/domains/sgroups"
+	{{ $.DomainPkg }} "{{ .Module }}/internal/shared/domains/{{ $.DomainPkg }}"
 )
 
 {{ range $res := .Resources }}
 {{- if not $res.IsComposite }}
 // Sync{{ $res.Name }}s upserts or deletes {{ $res.Name }} resources.
-func (w *pgWriter) Sync{{ $res.Name }}s(ctx context.Context, op SyncOp, items []sgroups.{{ $res.Name }}) error {
+func (w *pgWriter) Sync{{ $res.Name }}s(ctx context.Context, op SyncOp, items []{{ $.DomainPkg }}.{{ $res.Name }}) error {
 	if err := w.syncer{{ $res.Name }}.Sync(ctx, w.tx, op, items); err != nil {
 		return fmt.Errorf("sync {{ lower $res.Name }}s: %w", err)
 	}
@@ -21,7 +21,7 @@ func (w *pgWriter) Sync{{ $res.Name }}s(ctx context.Context, op SyncOp, items []
 {{ end }}
 {{- range $res.ExtraSyncers }}
 // Sync{{ .Name }} handles extra sync for {{ $res.Name }} ({{ .SQLFunc }}).
-func (w *pgWriter) Sync{{ .Name }}(ctx context.Context, op SyncOp, items []sgroups.{{ $res.Name }}) error {
+func (w *pgWriter) Sync{{ .Name }}(ctx context.Context, op SyncOp, items []{{ $.DomainPkg }}.{{ $res.Name }}) error {
 	if err := w.syncer{{ .Name }}.Sync(ctx, w.tx, op, items); err != nil {
 		return fmt.Errorf("sync {{ lower .Name }}: %w", err)
 	}

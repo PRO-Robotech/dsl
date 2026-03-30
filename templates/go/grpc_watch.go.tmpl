@@ -3,7 +3,7 @@
 package {{ lower .Res.Name }}
 
 import (
-	pb "{{ .Module }}/pkg/api/sgroups/v1"
+	pb "{{ .Module }}/pkg/api/{{ .Project.Name }}/v1"
 	"{{ .Module }}/internal/sg-server/transport/grpc/service/{{ lower .Res.Name }}/dto"
 )
 

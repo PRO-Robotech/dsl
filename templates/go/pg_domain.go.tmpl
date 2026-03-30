@@ -24,7 +24,19 @@ type PG{{ .Name }} struct {
 {{- end }}
 {{- end }}
 {{- range .Spec.Fields }}
+{{- if eq .SQLType "jsonb" }}
+	{{ goField .Name }}  []byte               `db:"{{ .ColumnName }}"`
+{{- else if eq .SQLType "cidr" }}
+	{{ goField .Name }}  string               `db:"{{ .ColumnName }}"`
+{{- else if eq .SQLType "bool" }}
+	{{ goField .Name }}  bool                 `db:"{{ .ColumnName }}"`
+{{- else if or (eq .SQLType "integer") (eq .SQLType "bigint") }}
+	{{ goField .Name }}  int64                `db:"{{ .ColumnName }}"`
+{{- else if contains .SQLType "." }}
+	{{ goField .Name }}  string               `db:"{{ .ColumnName }}"`
+{{- else }}
 	{{ goField .Name }}  {{ .GoType }}         `db:"{{ .ColumnName }}"`
+{{- end }}
 {{- end }}
 	DisplayName      string                 `db:"display_name"`
 	Description      string                 `db:"description"`
@@ -39,3 +51,4 @@ type PG{{ .Name }} struct {
 }
 {{ end }}
 {{- end }}
+

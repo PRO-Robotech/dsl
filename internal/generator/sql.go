@@ -186,14 +186,12 @@ BEGIN
 END;
 $fn$;
 
+CREATE SEQUENCE IF NOT EXISTS %[1]s.global_resource_version START 1;
+
 CREATE OR REPLACE FUNCTION %[1]s.inc_resource_version_cnt()
 RETURNS trigger LANGUAGE plpgsql AS $fn$
 BEGIN
-  IF TG_OP = 'INSERT' THEN
-    NEW.resource_version := 1;
-  ELSE
-    NEW.resource_version := OLD.resource_version + 1;
-  END IF;
+  NEW.resource_version := nextval('%[1]s.global_resource_version');
   RETURN NEW;
 END;
 $fn$;
@@ -422,13 +420,84 @@ func (g *Generator) generateSQLViews() error {
 
 	for i := range g.Schema.Resources {
 		res := &g.Schema.Resources[i]
-		if res.List.HasRefs {
+		if !res.List.HasRefs {
+			continue
+		}
+
+		if res.IsBinding() {
+			// Binding refs: build from own ref columns (direct references).
+			var unions []string
+			for _, ref := range res.Refs {
+				q := fmt.Sprintf(
+					"  SELECT jsonb_build_object(\n"+
+						"    'name', b.%s,\n"+
+						"    'namespace', COALESCE(b.namespace,''),\n"+
+						"    'resType', '%s'\n"+
+						"  )\n"+
+						"  FROM %s.tbl_%s b WHERE b.uid = uid_val",
+					ref.SQLColumn,
+					ref.Target,
+					g.Schema.DBSchema, res.Table)
+				unions = append(unions, q)
+			}
+			body := strings.Join(unions, "\n  UNION ALL\n")
+			buf.WriteString(fmt.Sprintf(
+				"CREATE OR REPLACE FUNCTION %s.resolve_%s_refs(uid_val uuid)\n"+
+					"RETURNS jsonb LANGUAGE sql STABLE AS $fn$\n"+
+					"  SELECT COALESCE(jsonb_agg(r), '[]'::jsonb) FROM (\n%s\n  ) r;\n"+
+					"$fn$;\n\n",
+				g.Schema.DBSchema, res.Table, body))
+			continue
+		}
+
+		// Non-binding refs: find all bindings that reference this resource.
+		var unions []string
+		for j := range g.Schema.Resources {
+			binding := &g.Schema.Resources[j]
+			if !binding.IsBinding() {
+				continue
+			}
+			for _, ref := range binding.Refs {
+				if ref.Target != res.Name {
+					continue
+				}
+				for _, otherRef := range binding.Refs {
+					if otherRef.Name == ref.Name {
+						continue
+					}
+					q := fmt.Sprintf(
+						"  SELECT jsonb_build_object(\n"+
+							"    'name', b.%s,\n"+
+							"    'namespace', COALESCE(b.namespace,''),\n"+
+							"    'resType', '%s'\n"+
+							"  )\n"+
+							"  FROM %s.tbl_%s b\n"+
+							"  JOIN %s.tbl_%s t ON t.name = b.%s\n"+
+							"  WHERE t.uid = uid_val",
+						otherRef.SQLColumn,
+						otherRef.Target,
+						g.Schema.DBSchema, binding.Table,
+						g.Schema.DBSchema, res.Table, ref.SQLColumn)
+					unions = append(unions, q)
+				}
+			}
+		}
+
+		if len(unions) == 0 {
 			buf.WriteString(fmt.Sprintf(
 				"CREATE OR REPLACE FUNCTION %s.resolve_%s_refs(uid_val uuid)\n"+
 					"RETURNS jsonb LANGUAGE sql STABLE AS $fn$\n"+
 					"  SELECT '[]'::jsonb;\n"+
 					"$fn$;\n\n",
 				g.Schema.DBSchema, res.Table))
+		} else {
+			body := strings.Join(unions, "\n  UNION ALL\n")
+			buf.WriteString(fmt.Sprintf(
+				"CREATE OR REPLACE FUNCTION %s.resolve_%s_refs(uid_val uuid)\n"+
+					"RETURNS jsonb LANGUAGE sql STABLE AS $fn$\n"+
+					"  SELECT COALESCE(jsonb_agg(r), '[]'::jsonb) FROM (\n%s\n  ) r;\n"+
+					"$fn$;\n\n",
+				g.Schema.DBSchema, res.Table, body))
 		}
 	}
 

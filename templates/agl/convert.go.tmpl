@@ -3,8 +3,8 @@
 package convert
 
 import (
-	v1alpha1 "{{ .Module }}/pkg/apis/sgroups/v1alpha1"
-	pb "{{ .Module }}/pkg/api/sgroups/v1"
+	v1alpha1 "{{ .Module }}/pkg/apis/{{ .Project.Name }}/{{ .Project.APIVersion }}"
+	pb "{{ .Module }}/pkg/api/{{ .Project.Name }}/v1"
 )
 
 // {{ .Res.Name }}ToProto converts a K8s {{ .Res.Name }} to its protobuf representation.
@@ -50,6 +50,14 @@ func {{ .Res.Name }}FromProto(in *pb.{{ .Res.Name }}) *v1alpha1.{{ .Res.Name }} 
 		}
 	}
 {{- end }}
+{{- end }}
+{{- if .Res.List.HasRefs }}
+	for _, r := range in.GetRefs() {
+		out.Refs = append(out.Refs, v1alpha1.ResourceRef{
+			Name:    r.GetName(),
+			ResType: r.GetResType(),
+		})
+	}
 {{- end }}
 	{{ .Res.Name }}SpecFromProto(in, out)
 	return out

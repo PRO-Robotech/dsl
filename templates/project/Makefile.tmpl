@@ -4,8 +4,8 @@
 # Build:
 #   proto              — .proto → Go stubs (requires protoc)
 #   build              — build all binaries
-#   build-server       — sgroups-backend
-#   build-apiserver    — sgroups-k8s-apiserver
+#   build-server       — {{ .Project.Name }}-backend
+#   build-apiserver    — {{ .Project.Name }}-k8s-apiserver
 #   test / lint        — go vet + go test / golangci-lint
 #   clean              — remove binaries + proto stubs
 #
@@ -33,12 +33,12 @@
 MODULE         := {{ .Module }}
 BIN            := ./bin
 
-IMAGE_BACKEND    := sgroups-backend:latest
-IMAGE_APISERVER  := sgroups-k8s-apiserver:latest
-IMAGE_MIGRATION  := sgroups-migration:latest
+IMAGE_BACKEND    := {{ .Project.Name }}-backend:latest
+IMAGE_APISERVER  := {{ .Project.Name }}-k8s-apiserver:latest
+IMAGE_MIGRATION  := {{ .Project.Name }}-migration:latest
 
-KIND_CLUSTER     := sgroups-dev
-NAMESPACE        := sgroups-system
+KIND_CLUSTER     := {{ .Project.Name }}-dev
+NAMESPACE        := {{ .Project.Name }}-system
 CERT_MANAGER_VER := v1.17.2
 PROXY_PORT       := 8001
 
@@ -62,17 +62,17 @@ proto:
 	protoc --go_out=. --go_opt=module=$(MODULE) \
 	       --go-grpc_out=. --go-grpc_opt=module=$(MODULE) \
 	       $(PROTO_INCLUDE) \
-	       $(PROTO_SRC)/sgroups/v1/*.proto
+	       $(PROTO_SRC)/{{ .Project.Name }}/v1/*.proto
 
 build: build-server build-apiserver
 
 build-server:
 	@mkdir -p $(BIN)
-	CGO_ENABLED=0 go build -ldflags="-s -w" -o $(BIN)/sgroups-backend ./cmd/sgroups-backend
+	CGO_ENABLED=0 go build -ldflags="-s -w" -o $(BIN)/{{ .Project.Name }}-backend ./cmd/{{ .Project.Name }}-backend
 
 build-apiserver:
 	@mkdir -p $(BIN)
-	CGO_ENABLED=0 go build -ldflags="-s -w" -o $(BIN)/sgroups-k8s-apiserver ./cmd/sgroups-k8s-apiserver
+	CGO_ENABLED=0 go build -ldflags="-s -w" -o $(BIN)/{{ .Project.Name }}-k8s-apiserver ./cmd/{{ .Project.Name }}-k8s-apiserver
 
 test:
 	go vet ./...
@@ -83,7 +83,7 @@ lint:
 
 clean:
 	rm -rf $(BIN)
-	rm -rf pkg/api/sgroups/v1/*.go
+	rm -rf pkg/api/{{ .Project.Name }}/v1/*.go
 
 # ═══════════════════════════════════════════════════════════════════
 #  Docker
@@ -105,10 +105,10 @@ docker-build-migration:
 # ═══════════════════════════════════════════════════════════════════
 
 kind-up: kind-create cert-manager docker-build docker-load deploy
-	@echo "sgroups stack is up. Run 'make status' to check."
+	@echo "{{ .Project.Name }} stack is up. Run 'make status' to check."
 
 kind-down: undeploy kind-delete
-	@echo "sgroups stack is down."
+	@echo "{{ .Project.Name }} stack is down."
 
 kind-create:
 	@if ! kind get clusters 2>/dev/null | grep -q '^$(KIND_CLUSTER)$$'; then \
@@ -140,14 +140,14 @@ deploy:
 	kubectl create namespace $(NAMESPACE) --dry-run=client -o yaml | kubectl apply -f -
 	@echo "Deploying PostgreSQL..."
 	kubectl apply -f deploy/postgres.yaml -n $(NAMESPACE)
-	kubectl wait --for=condition=Ready pod -l app=sgroups-postgres -n $(NAMESPACE) --timeout=120s
+	kubectl wait --for=condition=Ready pod -l app={{ .Project.Name }}-postgres -n $(NAMESPACE) --timeout=120s
 	@echo "Deploying backend (goose migration runs as init-container)..."
 	kubectl apply -f deploy/backend.yaml -n $(NAMESPACE)
-	kubectl rollout status deployment/sgroups-backend -n $(NAMESPACE) --timeout=180s
+	kubectl rollout status deployment/{{ .Project.Name }}-backend -n $(NAMESPACE) --timeout=180s
 	@echo "Deploying apiserver..."
-	kubectl apply -f deploy/apiserver.yaml -n $(NAMESPACE)
+	kubectl apply -f deploy/apiserver.yaml
 	kubectl apply -f deploy/apiservice_gen.yaml
-	kubectl rollout status deployment/sgroups-k8s-apiserver -n $(NAMESPACE) --timeout=120s
+	kubectl rollout status deployment/{{ .Project.Name }}-k8s-apiserver -n $(NAMESPACE) --timeout=120s
 	@echo "All components deployed."
 
 undeploy:
@@ -159,18 +159,18 @@ undeploy:
 redeploy-backend: docker-build-server docker-build-migration
 	kind load docker-image $(IMAGE_BACKEND) --name $(KIND_CLUSTER)
 	kind load docker-image $(IMAGE_MIGRATION) --name $(KIND_CLUSTER)
-	kubectl rollout restart deployment/sgroups-backend -n $(NAMESPACE)
-	kubectl rollout status deployment/sgroups-backend -n $(NAMESPACE) --timeout=180s
+	kubectl rollout restart deployment/{{ .Project.Name }}-backend -n $(NAMESPACE)
+	kubectl rollout status deployment/{{ .Project.Name }}-backend -n $(NAMESPACE) --timeout=180s
 
 redeploy-apiserver: docker-build-apiserver
 	kind load docker-image $(IMAGE_APISERVER) --name $(KIND_CLUSTER)
-	kubectl rollout restart deployment/sgroups-k8s-apiserver -n $(NAMESPACE)
-	kubectl rollout status deployment/sgroups-k8s-apiserver -n $(NAMESPACE) --timeout=120s
+	kubectl rollout restart deployment/{{ .Project.Name }}-k8s-apiserver -n $(NAMESPACE)
+	kubectl rollout status deployment/{{ .Project.Name }}-k8s-apiserver -n $(NAMESPACE) --timeout=120s
 
 remigrate: docker-build-migration
 	kind load docker-image $(IMAGE_MIGRATION) --name $(KIND_CLUSTER)
-	kubectl rollout restart deployment/sgroups-backend -n $(NAMESPACE)
-	kubectl rollout status deployment/sgroups-backend -n $(NAMESPACE) --timeout=180s
+	kubectl rollout restart deployment/{{ .Project.Name }}-backend -n $(NAMESPACE)
+	kubectl rollout status deployment/{{ .Project.Name }}-backend -n $(NAMESPACE) --timeout=180s
 
 # ═══════════════════════════════════════════════════════════════════
 #  Observability
@@ -180,20 +180,20 @@ status:
 	kubectl -n $(NAMESPACE) get all
 
 logs-backend:
-	kubectl logs -f deployment/sgroups-backend -n $(NAMESPACE)
+	kubectl logs -f deployment/{{ .Project.Name }}-backend -n $(NAMESPACE)
 
 logs-apiserver:
-	kubectl logs -f deployment/sgroups-k8s-apiserver -n $(NAMESPACE)
+	kubectl logs -f deployment/{{ .Project.Name }}-k8s-apiserver -n $(NAMESPACE)
 
 proxy:
 	@echo "K8s API proxy: http://localhost:$(PROXY_PORT)"
-	@echo "  Tenants: http://localhost:$(PROXY_PORT)/apis/sgroups.io/v1alpha1/tenants"
+	@echo "  Tenants: http://localhost:$(PROXY_PORT)/apis/{{ .Project.APIGroup }}/{{ .Project.APIVersion }}/tenants"
 	kubectl proxy --port=$(PROXY_PORT)
 
 port-forward-backend:
 	@echo "gRPC/HTTP backend: localhost:9006"
-	kubectl port-forward svc/sgroups-backend 9006:9006 -n $(NAMESPACE)
+	kubectl port-forward svc/{{ .Project.Name }}-backend 9006:9006 -n $(NAMESPACE)
 
 port-forward-postgres:
 	@echo "PostgreSQL: localhost:15432"
-	kubectl port-forward svc/sgroups-postgres 15432:5432 -n $(NAMESPACE)
+	kubectl port-forward svc/{{ .Project.Name }}-postgres 15432:5432 -n $(NAMESPACE)

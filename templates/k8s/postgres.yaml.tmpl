@@ -3,7 +3,7 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: sgroups-postgres-pvc
+  name: {{ .Project.Name }}-postgres-pvc
 spec:
   accessModes: [ReadWriteOnce]
   resources:
@@ -13,19 +13,19 @@ spec:
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: sgroups-postgres
+  name: {{ .Project.Name }}-postgres
   labels:
-    app: sgroups-postgres
+    app: {{ .Project.Name }}-postgres
 spec:
-  serviceName: sgroups-postgres
+  serviceName: {{ .Project.Name }}-postgres
   replicas: 1
   selector:
     matchLabels:
-      app: sgroups-postgres
+      app: {{ .Project.Name }}-postgres
   template:
     metadata:
       labels:
-        app: sgroups-postgres
+        app: {{ .Project.Name }}-postgres
     spec:
       containers:
         - name: postgres
@@ -59,10 +59,10 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: sgroups-postgres
+  name: {{ .Project.Name }}-postgres
 spec:
   selector:
-    app: sgroups-postgres
+    app: {{ .Project.Name }}-postgres
   ports:
     - port: 5432
       targetPort: 5432

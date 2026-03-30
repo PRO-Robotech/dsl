@@ -5,7 +5,7 @@ package v1alpha1
 import metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 const (
-	GroupName = "sgroups.io"
+	GroupName = "{{ $.Project.APIGroup }}"
 	Version   = "v1alpha1"
 )
 
@@ -21,6 +21,14 @@ type {{ $res.Name }} struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 	Spec              {{ $res.Name }}Spec `json:"spec,omitempty"`
+{{- if $res.List.HasRefs }}
+	Refs              []ResourceRef `json:"refs,omitempty"`
+{{- end }}
+{{- range $res.Spec.Fields }}
+{{- if .OutputOnly }}
+	{{ goField .Name }} {{ .K8sGoType }} `json:"{{ .JSONName }},omitempty"`
+{{- end }}
+{{- end }}
 }
 
 // {{ $res.Name }}List is a list of {{ $res.Name }} resources.
@@ -39,8 +47,6 @@ type {{ $res.Name }}Spec struct {
 {{- range $res.Spec.Fields }}
 {{- if not .OutputOnly }}
 	{{ goField .Name }} {{ .K8sGoType }} `json:"{{ .JSONName }},omitempty"`
-{{- else }}
-	{{ goField .Name }} {{ .K8sGoType }} `json:"-"`
 {{- end }}
 {{- end }}
 {{- if $res.IsBinding }}
@@ -50,20 +56,20 @@ type {{ $res.Name }}Spec struct {
 {{- end }}
 }
 
-func ({{ $res.Name }}) OpenAPIModelName() string { return "io.sgroups.{{ $res.Name }}" }
-func ({{ $res.Name }}List) OpenAPIModelName() string { return "io.sgroups.{{ $res.Name }}List" }
+func ({{ $res.Name }}) OpenAPIModelName() string { return "io.{{ $.Project.Name }}.{{ $res.Name }}" }
+func ({{ $res.Name }}List) OpenAPIModelName() string { return "io.{{ $.Project.Name }}.{{ $res.Name }}List" }
 
 {{- range $res.K8sSubresources }}
 
-// {{ $res.Name }}{{ title .Name }} is a K8s sub-resource for {{ $res.Name }}/{{ .Name }}.
+// {{ $res.Name }}{{ title .Name }}Sub is a K8s sub-resource for {{ $res.Name }}/{{ .Name }}.
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
-type {{ $res.Name }}{{ title .Name }} struct {
+type {{ $res.Name }}{{ title .Name }}Sub struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
-	{{ goField .Field }} {{ .K8sType }}  `json:"{{ .Field }}"`
+	{{ goField .SpecField }} {{ .K8sType }}  `json:"{{ camelCase .SpecField }}"`
 }
 
-func ({{ $res.Name }}{{ title .Name }}) OpenAPIModelName() string { return "io.sgroups.{{ $res.Name }}{{ title .Name }}" }
+func ({{ $res.Name }}{{ title .Name }}Sub) OpenAPIModelName() string { return "io.{{ $.Project.Name }}.{{ $res.Name }}{{ title .Name }}Sub" }
 {{- end }}
 
 {{ end }}
@@ -72,4 +78,11 @@ func ({{ $res.Name }}{{ title .Name }}) OpenAPIModelName() string { return "io.s
 type ResourceIdentifier struct {
 	Name      string `json:"name"`
 	Namespace string `json:"namespace,omitempty"`
+}
+
+// ResourceRef is a back-reference from a resource to its related binding resources.
+type ResourceRef struct {
+	Name      string `json:"name"`
+	Namespace string `json:"namespace,omitempty"`
+	ResType   string `json:"resType,omitempty"`
 }

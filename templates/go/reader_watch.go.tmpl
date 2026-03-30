@@ -6,13 +6,13 @@ import (
 	"context"
 	"fmt"
 
-	sgroups "{{ .Module }}/internal/shared/domains/sgroups"
+	{{ $.DomainPkg }} "{{ .Module }}/internal/shared/domains/{{ $.DomainPkg }}"
 )
 
 {{ range .Resources }}
 {{- if not .IsComposite }}
 // Watch{{ .Name }}s streams {{ .Name }} events.
-func (r *pgReader) Watch{{ .Name }}s(ctx context.Context, opts ...any) (<-chan sgroups.{{ .Name }}Event, error) {
+func (r *pgReader) Watch{{ .Name }}s(ctx context.Context, opts ...any) (<-chan {{ $.DomainPkg }}.{{ .Name }}Event, error) {
 	ch, err := r.lw{{ .Name }}.Watch(ctx, r.conn, "{{ .Events.Channel }}", opts...)
 	if err != nil {
 		return nil, fmt.Errorf("watch {{ lower .Name }}s: %w", err)

@@ -3,11 +3,14 @@ package generator
 import (
 	"fmt"
 	"path/filepath"
+
+	"github.com/PRO-Robotech/cursor/dsl/internal/ir"
 )
 
 type dockerTemplateData struct {
 	Module   string
 	DBSchema string
+	Project  ir.ProjectConfig
 }
 
 func (g *Generator) loadDockerTemplate(name string) (string, error) {
@@ -24,6 +27,7 @@ func (g *Generator) GenerateDockerfiles() error {
 	data := dockerTemplateData{
 		Module:   g.Schema.Module,
 		DBSchema: g.Schema.DBSchema,
+		Project:  g.Schema.Project,
 	}
 
 	files := []struct {

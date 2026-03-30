@@ -5,17 +5,17 @@ package dto
 import (
 	"github.com/google/uuid"
 
-	sgroups "{{ .Module }}/internal/shared/domains/sgroups"
-	pb "{{ .Module }}/pkg/api/sgroups/v1"
+	{{ .Project.Name }} "{{ .Module }}/internal/shared/domains/{{ .Project.Name }}"
+	pb "{{ .Module }}/pkg/api/{{ .Project.Name }}/v1"
 )
 
 // {{ .Res.Name }}FromProto converts a protobuf {{ .Res.Name }} to its domain representation.
-func {{ .Res.Name }}FromProto(msg *pb.{{ .Res.Name }}) sgroups.{{ .Res.Name }} {
+func {{ .Res.Name }}FromProto(msg *pb.{{ .Res.Name }}) {{ .Project.Name }}.{{ .Res.Name }} {
 	md := msg.GetMetadata()
 	uid, _ := uuid.Parse(md.GetUid())
 	spec := msg.GetSpec()
-	d := sgroups.{{ .Res.Name }}{
-		Metadata: sgroups.{{ .Res.Name }}Metadata{
+	d := {{ .Project.Name }}.{{ .Res.Name }}{
+		Metadata: {{ .Project.Name }}.{{ .Res.Name }}Metadata{
 			UID:             uid,
 			Name:            md.GetName(),
 {{- if .Res.IsNamespaced }}
@@ -25,7 +25,7 @@ func {{ .Res.Name }}FromProto(msg *pb.{{ .Res.Name }}) sgroups.{{ .Res.Name }} {
 			Annotations:     md.GetAnnotations(),
 			ResourceVersion: md.GetResourceVersion(),
 		},
-		Spec: sgroups.{{ .Res.Name }}Spec{
+		Spec: {{ .Project.Name }}.{{ .Res.Name }}Spec{
 			DisplayName: spec.GetDisplayName(),
 			Description: spec.GetDescription(),
 			Comment:     spec.GetComment(),
@@ -33,7 +33,7 @@ func {{ .Res.Name }}FromProto(msg *pb.{{ .Res.Name }}) sgroups.{{ .Res.Name }} {
 	}
 {{- if .Res.IsBinding }}
 {{- range .Res.Refs }}
-	d.Spec.{{ goField .Name }} = sgroups.ResourceReference{
+	d.Spec.{{ goField .Name }} = {{ $.Project.Name }}.ResourceReference{
 		Name:      spec.Get{{ goField .Name }}().GetName(),
 		Namespace: spec.Get{{ goField .Name }}().GetNamespace(),
 	}

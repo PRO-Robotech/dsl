@@ -1,30 +1,30 @@
 package dto
 
 import (
-	sgroups "{{ .Module }}/internal/shared/domains/sgroups"
-	pb "{{ .Module }}/pkg/api/sgroups/v1"
+	{{ .Project.Name }} "{{ .Module }}/internal/shared/domains/{{ .Project.Name }}"
+	pb "{{ .Module }}/pkg/api/{{ .Project.Name }}/v1"
 )
 
 // {{ .Res.Name }}SpecFromProto converts spec-specific fields from proto to domain.
 // This file is generated once — customize spec field mapping here.
-func {{ .Res.Name }}SpecFromProto(msg *pb.{{ .Res.Name }}, d *sgroups.{{ .Res.Name }}) {
+func {{ .Res.Name }}SpecFromProto(msg *pb.{{ .Res.Name }}, d *{{ .Project.Name }}.{{ .Res.Name }}) {
 {{- range .Res.Spec.Fields }}
 {{- if eq .GoType "PolicyAction" }}
-	d.Spec.{{ goField .Name }} = sgroups.PolicyAction(msg.GetSpec().Get{{ goField .Name }}())
+	d.Spec.{{ goField .Name }} = {{ $.Project.Name }}.PolicyAction(msg.GetSpec().Get{{ goField .Name }}())
 {{- else if eq .GoType "bool" }}
 	d.Spec.{{ goField .Name }} = msg.GetSpec().Get{{ goField .Name }}()
 {{- else if eq .GoType "IPNet" }}
-	d.Spec.{{ goField .Name }} = sgroups.ParseIPNet(msg.GetSpec().Get{{ goField .Name }}())
+	d.Spec.{{ goField .Name }} = {{ $.Project.Name }}.ParseIPNet(msg.GetSpec().Get{{ goField .Name }}())
 {{- else if eq .GoType "DualStackIPs" }}
 	if ips := msg.GetSpec().GetIps(); ips != nil {
-		d.{{ goField .Name }} = sgroups.DualStackIPs{
+		d.{{ goField .Name }} = {{ $.Project.Name }}.DualStackIPs{
 			IPv4: ips.GetIpv4(),
 			IPv6: ips.GetIpv6(),
 		}
 	}
 {{- else if eq .GoType "HostInfo" }}
 	if mi := msg.GetSpec().GetMetaInfo(); mi != nil {
-		d.{{ goField .Name }} = sgroups.HostInfo{
+		d.{{ goField .Name }} = {{ $.Project.Name }}.HostInfo{
 			HostName:        mi.GetHostName(),
 			OS:              mi.GetOs(),
 			Platform:        mi.GetPlatform(),
@@ -34,13 +34,13 @@ func {{ .Res.Name }}SpecFromProto(msg *pb.{{ .Res.Name }}, d *sgroups.{{ .Res.Na
 		}
 	}
 {{- else if eq .GoType "TransportSpec" }}
-	if t := msg.GetSpec().GetTransport(); t != nil {
-		ts := sgroups.TransportSpec{
-			Protocol: sgroups.Proto(t.GetProtocol()),
-			IPv:      sgroups.IPFamily(t.GetIpV()),
+	for _, t := range msg.GetSpec().GetTransport() {
+		ts := {{ $.Project.Name }}.TransportSpec{
+			Protocol: {{ $.Project.Name }}.Proto(t.GetProtocol()),
+			IPv:      {{ $.Project.Name }}.IPFamily(t.GetIpV()),
 		}
 		for _, e := range t.GetEntries() {
-			te := sgroups.TransportEntry{
+			te := {{ $.Project.Name }}.TransportEntry{
 				Description: e.GetDescription(),
 				Comment:     e.GetComment(),
 			}
@@ -57,7 +57,7 @@ func {{ .Res.Name }}SpecFromProto(msg *pb.{{ .Res.Name }}, d *sgroups.{{ .Res.Na
 			}
 			ts.Entries = append(ts.Entries, te)
 		}
-		d.Spec.Transport = ts
+		d.Spec.Transport = append(d.Spec.Transport, ts)
 	}
 {{- else }}
 	// TODO: map msg field -> d.Spec.{{ goField .Name }}

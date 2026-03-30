@@ -5,9 +5,9 @@ package {{ lower .Res.Name }}
 import (
 	"context"
 
-	sgroups "{{ .Module }}/internal/shared/domains/sgroups"
+	{{ .Project.Name }} "{{ .Module }}/internal/shared/domains/{{ .Project.Name }}"
 	sg "{{ .Module }}/internal/sg-server/repository"
-	pb "{{ .Module }}/pkg/api/sgroups/v1"
+	pb "{{ .Module }}/pkg/api/{{ .Project.Name }}/v1"
 	"{{ .Module }}/internal/sg-server/transport/grpc/service/{{ lower .Res.Name }}/dto"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -18,14 +18,14 @@ func (s *Service{{ .Res.Name }}) Upsert{{ .Res.Name }}s(
 	ctx context.Context,
 	req *pb.{{ .Res.Name }}Req_Upsert,
 ) (*pb.{{ .Res.Name }}Resp_Upsert, error) {
-	items := make([]sgroups.{{ .Res.Name }}, 0, len(req.Get{{ resGoPlural .Res.Name }}()))
+	items := make([]{{ .Project.Name }}.{{ .Res.Name }}, 0, len(req.Get{{ resGoPlural .Res.Name }}()))
 	for _, pbItem := range req.Get{{ resGoPlural .Res.Name }}() {
 		d := dto.{{ .Res.Name }}FromProto(pbItem)
 
-		if err := sgroups.Validate{{ .Res.Name }}Metadata(&d); err != nil {
+		if err := {{ .Project.Name }}.Validate{{ .Res.Name }}Metadata(&d); err != nil {
 			return nil, status.Errorf(codes.InvalidArgument, "validation: %v", err)
 		}
-		if err := sgroups.Validate{{ .Res.Name }}(&d); err != nil {
+		if err := {{ .Project.Name }}.Validate{{ .Res.Name }}(&d); err != nil {
 			return nil, status.Errorf(codes.InvalidArgument, "validation: %v", err)
 		}
 

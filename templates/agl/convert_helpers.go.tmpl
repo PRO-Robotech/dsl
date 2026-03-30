@@ -6,7 +6,7 @@ import (
 	"context"
 	"strconv"
 
-	pb "{{ .Module }}/pkg/api/sgroups/v1"
+	pb "{{ .Module }}/pkg/api/{{ .Project.Name }}/v1"
 	"{{ .Module }}/internal/registry/base"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -52,14 +52,15 @@ func ObjectMetaFromProto(out *metav1.ObjectMeta, meta *pb.ResourceMetadata) {
 
 // SelectionToProto converts K8s base.Selection to proto ResSelectors.
 func SelectionToProto(sel base.Selection) []*pb.ResSelector {
-	if sel.Name == "" && len(sel.Labels) == 0 {
+	if sel.Name == "" && len(sel.Labels) == 0 && len(sel.SpecFields) == 0 {
 		return nil
 	}
 	return []*pb.ResSelector{
 		{
 			FieldSelector: &pb.FieldSelector{
-				Name:      sel.Name,
-				Namespace: sel.Namespace,
+				Name:       sel.Name,
+				Namespace:  sel.Namespace,
+				SpecFields: sel.SpecFields,
 			},
 			LabelSelector: sel.Labels,
 		},

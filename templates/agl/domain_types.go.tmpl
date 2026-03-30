@@ -35,7 +35,7 @@ type HostMetaInfo struct {
 // Transport describes protocol-specific transport configuration.
 type Transport struct {
 	Protocol string           `json:"protocol"`
-	IPv      int32            `json:"IPv"`
+	IpV      string           `json:"ipV"`
 	Entries  []TransportEntry `json:"entries,omitempty"`
 }
 

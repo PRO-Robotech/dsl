@@ -5,8 +5,8 @@ package {{ lower .Res.Name }}
 import (
 	"context"
 
-	v1alpha1 "{{ .Module }}/pkg/apis/sgroups/v1alpha1"
-	pb "{{ .Module }}/pkg/api/sgroups/v1"
+	v1alpha1 "{{ .Module }}/pkg/apis/{{ .Project.Name }}/{{ .Project.APIVersion }}"
+	pb "{{ .Module }}/pkg/api/{{ .Project.Name }}/v1"
 	"{{ .Module }}/internal/registry/convert"
 	"{{ .Module }}/internal/registry/base"
 	"{{ .Module }}/pkg/client"

@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS {{ .Schema }}.tbl_{{ .Res.Table }} (
     {{ .SQLColumn }}  {{ $.Schema }}.rname NOT NULL,
 {{- end }}
 {{- range .Res.Spec.Fields }}
-    {{ .ColumnName }}  {{ .SQLType }}{{ if .Default }} NOT NULL DEFAULT {{ .Default }}{{ end }},
+    {{ .ColumnName }}  {{ .SQLType }}{{ if .Default }} NOT NULL DEFAULT {{ .Default }}{{ else if contains .Validate "required" }} NOT NULL{{ end }},
 {{- end }}
     display_name   text NOT NULL DEFAULT '',
     description    text NOT NULL DEFAULT '',

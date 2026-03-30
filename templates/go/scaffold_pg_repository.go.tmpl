@@ -49,8 +49,9 @@ type pgReader struct {
 
 {{ range $res := .Resources -}}
 {{ if not $res.IsComposite -}}
-func (r *pgReader) List{{ $res.Name }}s(ctx context.Context, _ ...any) ([]{{ $.DomainPkg }}.{{ $res.Name }}, error) {
-	rows, err := r.pool.Query(ctx, "SELECT uid, name
+func (r *pgReader) List{{ $res.Name }}s(ctx context.Context, opts ...ListOption) ([]{{ $.DomainPkg }}.{{ $res.Name }}, error) {
+	p := ApplyListOptions(opts)
+	query := "SELECT uid, name
 {{- if $res.IsNamespaced }}, namespace{{ end -}}
 {{- range $f := $res.Spec.Fields -}}
 {{- if eq $f.SQLType "cidr" }}, {{ $f.ColumnName }}::text{{ else }}, {{ $f.ColumnName }}{{ end -}}
@@ -59,7 +60,48 @@ func (r *pgReader) List{{ $res.Name }}s(ctx context.Context, _ ...any) ([]{{ $.D
 , display_name, description, comment, labels, annotations
 {{- if $res.HasBindingRev }}, binding_rev{{ end -}}
 , resource_version, creation_timestamp
-{{- if $res.List.HasRefs }}, refs{{ end }} FROM {{ $.DBSchema }}.vu_{{ $res.Table }} ORDER BY name")
+{{- if $res.List.HasRefs }}, refs{{ end }} FROM {{ $.DBSchema }}.vu_{{ $res.Table }}"
+	var args []any
+	var wheres []string
+	argN := 1
+	if p.Name != "" {
+		wheres = append(wheres, fmt.Sprintf("name = $%d", argN))
+		args = append(args, p.Name)
+		argN++
+	}
+{{- if $res.IsNamespaced }}
+	if p.Namespace != "" {
+		wheres = append(wheres, fmt.Sprintf("namespace = $%d", argN))
+		args = append(args, p.Namespace)
+		argN++
+	}
+{{- end }}
+{{- range $f := $res.Spec.Fields }}
+{{- if $f.Selector }}
+	if v, ok := p.SpecFields["{{ camelCase $f.Name }}"]; ok {
+		wheres = append(wheres, fmt.Sprintf("{{ $f.ColumnName }} = $%d", argN))
+		args = append(args, v)
+		argN++
+	}
+{{- end }}
+{{- end }}
+{{- if $res.IsBinding }}
+{{- range $ref := $res.Refs }}
+{{- if $ref.Selector }}
+	if v, ok := p.SpecFields["{{ $ref.Name }}"]; ok {
+		wheres = append(wheres, fmt.Sprintf("{{ $ref.SQLColumn }} = $%d", argN))
+		args = append(args, v)
+		argN++
+	}
+{{- end }}
+{{- end }}
+{{- end }}
+	if len(wheres) > 0 {
+		query += " WHERE " + strings.Join(wheres, " AND ")
+	}
+	_ = argN
+	query += " ORDER BY name"
+	rows, err := r.pool.Query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list {{ snakeCase $res.Name }}s: %w", err)
 	}
@@ -141,7 +183,7 @@ func (r *pgReader) List{{ $res.Name }}s(ctx context.Context, _ ...any) ([]{{ $.D
 {{- range $f := $res.Spec.Fields }}
 {{- if eq $f.SQLType "cidr" }}
 		if f{{ goField $f.Name }} != nil {
-			obj.Spec.{{ goField $f.Name }} = *f{{ goField $f.Name }}
+			obj.Spec.{{ goField $f.Name }} = {{ $.DomainPkg }}.ParseIPNet(*f{{ goField $f.Name }})
 		}
 {{- else if eq $f.SQLType "jsonb" }}
 {{- if $f.OutputOnly }}
@@ -232,7 +274,7 @@ func (r *pgReader) Watch{{ $res.Name }}s(ctx context.Context, _ ...any) (<-chan 
 {{- range $f := $res.Spec.Fields }}
 {{- if eq $f.SQLType "cidr" }}
 		if row.{{ goField $f.Name }} != nil {
-			obj.Spec.{{ goField $f.Name }} = *row.{{ goField $f.Name }}
+			obj.Spec.{{ goField $f.Name }} = {{ $.DomainPkg }}.ParseIPNet(*row.{{ goField $f.Name }})
 		}
 {{- else if eq $f.SQLType "jsonb" }}
 {{- if $f.OutputOnly }}
@@ -286,6 +328,7 @@ func (w *pgWriter) Sync{{ $res.Name }}s(ctx context.Context, op SyncOp, items []
 {{- if not $f.OutputOnly -}}
 {{- if or (eq $f.SQLType "jsonb") (hasPrefix $f.GoType "[]") }}, {{ $f.Name }}JSON
 {{- else if eq $f.SQLType "bool" }}, item.Spec.{{ goField $f.Name }}
+{{- else if eq $f.SQLType "cidr" }}, item.Spec.{{ goField $f.Name }}.String()
 {{- else if eq $f.GoType "string" }}, item.Spec.{{ goField $f.Name }}
 {{- else }}, string(item.Spec.{{ goField $f.Name }})
 {{- end -}}

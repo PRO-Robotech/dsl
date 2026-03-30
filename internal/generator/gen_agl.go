@@ -10,6 +10,7 @@ import (
 
 type aglTemplateData struct {
 	Module    string
+	Project   ir.ProjectConfig
 	Resources []aglResource
 }
 
@@ -25,18 +26,19 @@ type aglSpec struct {
 type aglSpecField struct {
 	ir.SpecField
 	K8sGoType string
-	JSONName  string
 }
 
 type aglResTemplateData struct {
-	Module string
-	Res    *aglResource
+	Module  string
+	Project ir.ProjectConfig
+	Res     *aglResource
 }
 
 type aglAPIServiceData struct {
 	APIGroup   string
 	APIVersion string
 	Namespace  string
+	Project    ir.ProjectConfig
 }
 
 func (g *Generator) loadAGLTemplate(name string) (string, error) {
@@ -49,7 +51,10 @@ func (g *Generator) loadAGLTemplate(name string) (string, error) {
 }
 
 func (g *Generator) buildAGLData() aglTemplateData {
-	data := aglTemplateData{Module: g.Schema.Module}
+	data := aglTemplateData{
+		Module:  g.Schema.Module,
+		Project: g.Schema.Project,
+	}
 	for _, res := range g.Schema.Resources {
 		if res.IsComposite() {
 			continue
@@ -57,14 +62,15 @@ func (g *Generator) buildAGLData() aglTemplateData {
 		ar := aglResource{Resource: res}
 		for _, f := range res.Spec.Fields {
 			k8sType := mapGoTypeToK8s(f.GoType)
-			jsonName := f.Name
-			if f.ProtoField != "" {
-				jsonName = f.ProtoField
+			if f.Repeated {
+				k8sType = "[]" + k8sType
+			}
+			if f.JSONName == "" {
+				f.JSONName = toCamelCase(f.Name)
 			}
 			ar.Spec.Fields = append(ar.Spec.Fields, aglSpecField{
 				SpecField: f,
 				K8sGoType: k8sType,
-				JSONName:  jsonName,
 			})
 		}
 		data.Resources = append(data.Resources, ar)
@@ -91,26 +97,28 @@ func mapGoTypeToK8s(goType string) string {
 	}
 }
 
-// GenerateAGL produces all AGL (Aggregated API Layer) files.
 func (g *Generator) GenerateAGL() error {
 	data := g.buildAGLData()
 
-	if err := g.generateAGLDomainTypes(); err != nil {
+	proj := g.Schema.Project
+	aglPkg := fmt.Sprintf("pkg/apis/%s/%s", proj.Name, proj.APIVersion)
+
+	if err := g.generateAGLDomainTypes(aglPkg); err != nil {
 		return err
 	}
-	if err := g.generateAGLTypes(data); err != nil {
+	if err := g.generateAGLTypes(data, aglPkg); err != nil {
 		return err
 	}
-	if err := g.generateAGLRegister(data); err != nil {
+	if err := g.generateAGLRegister(data, aglPkg); err != nil {
 		return err
 	}
-	if err := g.generateAGLKnownTypes(data); err != nil {
+	if err := g.generateAGLKnownTypes(data, aglPkg); err != nil {
 		return err
 	}
-	if err := g.generateAGLDeepCopy(data); err != nil {
+	if err := g.generateAGLDeepCopy(data, aglPkg); err != nil {
 		return err
 	}
-	if err := g.generateAGLOpenAPI(data); err != nil {
+	if err := g.generateAGLOpenAPI(data, aglPkg); err != nil {
 		return err
 	}
 	if err := g.generateAGLClient(data); err != nil {
@@ -120,6 +128,9 @@ func (g *Generator) GenerateAGL() error {
 		return err
 	}
 	if err := g.generateAGLConvertHelpers(data); err != nil {
+		return err
+	}
+	if err := g.generateAGLConvertTypeHelpers(); err != nil {
 		return err
 	}
 	if err := g.generateAGLPerResource(data); err != nil {
@@ -134,19 +145,28 @@ func (g *Generator) GenerateAGL() error {
 	return nil
 }
 
-func (g *Generator) generateAGLDomainTypes() error {
+func (g *Generator) generateAGLDomainTypes(aglPkg string) error {
 	tmpl, err := g.loadAGLTemplate("domain_types.go.tmpl")
 	if err != nil {
 		return err
 	}
-	out, err := g.execTemplate("agl-domain-types", tmpl, nil)
+	data := struct {
+		Module  string
+		Project ir.ProjectConfig
+		Types   []ir.CustomType
+	}{
+		Module:  g.Schema.Module,
+		Project: g.Schema.Project,
+		Types:   g.Schema.Types,
+	}
+	out, err := g.execTemplate("agl-domain-types", tmpl, data)
 	if err != nil {
 		return err
 	}
-	return g.writeGen("pkg/apis/sgroups/v1alpha1/domain_types_gen.go", out)
+	return g.writeGen(aglPkg+"/domain_types_gen.go", out)
 }
 
-func (g *Generator) generateAGLTypes(data aglTemplateData) error {
+func (g *Generator) generateAGLTypes(data aglTemplateData, aglPkg string) error {
 	tmpl, err := g.loadAGLTemplate("types.go.tmpl")
 	if err != nil {
 		return err
@@ -155,10 +175,10 @@ func (g *Generator) generateAGLTypes(data aglTemplateData) error {
 	if err != nil {
 		return err
 	}
-	return g.writeGen("pkg/apis/sgroups/v1alpha1/types_gen.go", out)
+	return g.writeGen(aglPkg+"/types_gen.go", out)
 }
 
-func (g *Generator) generateAGLRegister(data aglTemplateData) error {
+func (g *Generator) generateAGLRegister(data aglTemplateData, aglPkg string) error {
 	tmpl, err := g.loadAGLTemplate("register.go.tmpl")
 	if err != nil {
 		return err
@@ -167,10 +187,10 @@ func (g *Generator) generateAGLRegister(data aglTemplateData) error {
 	if err != nil {
 		return err
 	}
-	return g.writeGen("pkg/apis/sgroups/v1alpha1/register_gen.go", out)
+	return g.writeGen(aglPkg+"/register_gen.go", out)
 }
 
-func (g *Generator) generateAGLKnownTypes(data aglTemplateData) error {
+func (g *Generator) generateAGLKnownTypes(data aglTemplateData, aglPkg string) error {
 	tmpl, err := g.loadAGLTemplate("known_types.go.tmpl")
 	if err != nil {
 		return err
@@ -179,10 +199,10 @@ func (g *Generator) generateAGLKnownTypes(data aglTemplateData) error {
 	if err != nil {
 		return err
 	}
-	return g.writeGen("pkg/apis/sgroups/v1alpha1/known_types_gen.go", out)
+	return g.writeGen(aglPkg+"/known_types_gen.go", out)
 }
 
-func (g *Generator) generateAGLDeepCopy(data aglTemplateData) error {
+func (g *Generator) generateAGLDeepCopy(data aglTemplateData, aglPkg string) error {
 	tmpl, err := g.loadAGLTemplate("deepcopy.go.tmpl")
 	if err != nil {
 		return err
@@ -191,10 +211,10 @@ func (g *Generator) generateAGLDeepCopy(data aglTemplateData) error {
 	if err != nil {
 		return err
 	}
-	return g.writeGen("pkg/apis/sgroups/v1alpha1/zz_generated.deepcopy.go", out)
+	return g.writeGen(aglPkg+"/zz_generated.deepcopy.go", out)
 }
 
-func (g *Generator) generateAGLOpenAPI(data aglTemplateData) error {
+func (g *Generator) generateAGLOpenAPI(data aglTemplateData, aglPkg string) error {
 	tmpl, err := g.loadAGLTemplate("openapi.go.tmpl")
 	if err != nil {
 		return err
@@ -203,7 +223,7 @@ func (g *Generator) generateAGLOpenAPI(data aglTemplateData) error {
 	if err != nil {
 		return err
 	}
-	return g.writeGen("pkg/apis/sgroups/v1alpha1/openapi_gen.go", out)
+	return g.writeGen(aglPkg+"/openapi_gen.go", out)
 }
 
 func (g *Generator) generateAGLClient(data aglTemplateData) error {
@@ -242,6 +262,27 @@ func (g *Generator) generateAGLConvertHelpers(data aglTemplateData) error {
 	return g.writeGen("internal/registry/convert/helpers_gen.go", out)
 }
 
+func (g *Generator) generateAGLConvertTypeHelpers() error {
+	tmpl, err := g.loadAGLTemplate("convert_type_helpers.go.tmpl")
+	if err != nil {
+		return err
+	}
+	data := struct {
+		Module  string
+		Project ir.ProjectConfig
+		Types   []ir.CustomType
+	}{
+		Module:  g.Schema.Module,
+		Project: g.Schema.Project,
+		Types:   g.Schema.Types,
+	}
+	out, err := g.execTemplate("agl-convert-type-helpers", tmpl, data)
+	if err != nil {
+		return err
+	}
+	return g.writeGen("internal/registry/convert/type_helpers_gen.go", out)
+}
+
 func (g *Generator) generateAGLPerResource(data aglTemplateData) error {
 	backendTmpl, err := g.loadAGLTemplate("backend.go.tmpl")
 	if err != nil {
@@ -257,7 +298,7 @@ func (g *Generator) generateAGLPerResource(data aglTemplateData) error {
 	}
 	scaffoldConvertTmpl, err := g.loadAGLTemplate("scaffold_convert.go.tmpl")
 	if err != nil {
-		return err
+		return fmt.Errorf("load scaffold_convert.go.tmpl: %w", err)
 	}
 
 	var subresourceTmpl string
@@ -269,7 +310,11 @@ func (g *Generator) generateAGLPerResource(data aglTemplateData) error {
 	for i := range data.Resources {
 		res := &data.Resources[i]
 		resDir := strings.ToLower(res.Name)
-		resData := aglResTemplateData{Module: g.Schema.Module, Res: res}
+		resData := aglResTemplateData{
+			Module:  g.Schema.Module,
+			Project: g.Schema.Project,
+			Res:     res,
+		}
 
 		genFiles := []struct {
 			tmpl    string
@@ -309,10 +354,10 @@ func (g *Generator) generateAGLPerResource(data aglTemplateData) error {
 
 		scaffoldOut, err := g.execTemplate("scaffold-convert-"+res.Name, scaffoldConvertTmpl, resData)
 		if err != nil {
-			return err
+			return fmt.Errorf("scaffold-convert %s: %w", res.Name, err)
 		}
-		if err := g.writeScaffold(
-			fmt.Sprintf("internal/registry/convert/%s.go", resDir),
+		if err := g.writeGen(
+			fmt.Sprintf("internal/registry/convert/%s_spec_gen.go", resDir),
 			scaffoldOut,
 		); err != nil {
 			return err
@@ -346,12 +391,13 @@ func (g *Generator) generateAGLInfra(data aglTemplateData) error {
 		}
 	}
 
+	proj := g.Schema.Project
 	scaffoldTemplates := []struct {
 		tmpl string
 		path string
 	}{
 		{"scaffold_apiserver.go.tmpl", "internal/apiserver/apiserver.go"},
-		{"scaffold_main.go.tmpl", "cmd/sgroups-k8s-apiserver/main.go"},
+		{"scaffold_main.go.tmpl", fmt.Sprintf("cmd/%s-k8s-apiserver/main.go", proj.Name)},
 	}
 	for _, st := range scaffoldTemplates {
 		tmpl, err := g.loadAGLTemplate(st.tmpl)
@@ -375,10 +421,12 @@ func (g *Generator) generateAGLAPIServiceManifest() error {
 	if err != nil {
 		return err
 	}
+	proj := g.Schema.Project
 	data := aglAPIServiceData{
-		APIGroup:   "sgroups.io",
-		APIVersion: "v1alpha1",
-		Namespace:  "sgroups-system",
+		APIGroup:   proj.APIGroup,
+		APIVersion: proj.APIVersion,
+		Namespace:  proj.Name + "-system",
+		Project:    proj,
 	}
 	out, err := g.execTemplate("agl-apiservice", tmpl, data)
 	if err != nil {

@@ -2,12 +2,12 @@
 
 syntax = "proto3";
 
-package sgroups.v1;
+package {{ .Project.ProtoPackage }};
 
-option go_package = "{{ .Module }}/pkg/api/sgroups/v1";
+option go_package = "{{ .Module }}/pkg/api/{{ .Project.Name }}/v1";
 
-import "sgroups/v1/domains_gen.proto";
-import "sgroups/v1/queries_gen.proto";
+import "{{ .Project.Name }}/v1/domains_gen.proto";
+import "{{ .Project.Name }}/v1/queries_gen.proto";
 import "google/api/annotations.proto";
 
 {{ range $cr := .CompositeResources }}

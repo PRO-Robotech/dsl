@@ -3,7 +3,7 @@
 package apiserver
 
 import (
-	v1alpha1 "{{ .Module }}/pkg/apis/sgroups/v1alpha1"
+	v1alpha1 "{{ .Module }}/pkg/apis/{{ .Project.Name }}/{{ .Project.APIVersion }}"
 	"{{ .Module }}/internal/registry/options"
 	"{{ .Module }}/pkg/client"
 	"k8s.io/apiserver/pkg/registry/rest"

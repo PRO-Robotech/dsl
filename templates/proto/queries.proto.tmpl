@@ -2,11 +2,11 @@
 
 syntax = "proto3";
 
-package sgroups.v1;
+package {{ .Project.ProtoPackage }};
 
-option go_package = "{{ .Module }}/pkg/api/sgroups/v1";
+option go_package = "{{ .Module }}/pkg/api/{{ .Project.Name }}/v1";
 
-import "sgroups/v1/domains_gen.proto";
+import "{{ .Project.Name }}/v1/domains_gen.proto";
 
 // ─── Selector messages ───────────────────────────────────────
 
@@ -21,6 +21,7 @@ message FieldSelector {
   string name = 1;
   string namespace = 2;
   repeated ResourceRef refs = 3;
+  map<string, string> spec_fields = 4;
 }
 
 // ─── Standard resource queries ───────────────────────────────

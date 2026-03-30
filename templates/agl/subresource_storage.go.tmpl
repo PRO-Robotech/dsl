@@ -6,8 +6,8 @@ import (
 	"context"
 	"fmt"
 
-	v1alpha1 "{{ .Module }}/pkg/apis/sgroups/v1alpha1"
-	pb "{{ .Module }}/pkg/api/sgroups/v1"
+	v1alpha1 "{{ .Module }}/pkg/apis/{{ .Project.Name }}/{{ .Project.APIVersion }}"
+	pb "{{ .Module }}/pkg/api/{{ .Project.Name }}/v1"
 	"{{ .Module }}/internal/registry/convert"
 	"{{ .Module }}/pkg/client"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -49,7 +49,7 @@ func (s *{{ .Name }}Storage) Get(ctx context.Context, name string, _ *metav1.Get
 	parent := convert.{{ $.Res.Name }}FromProto(items[0])
 	sub := &v1alpha1.{{ $.Res.Name }}{{ title .Name }}{
 		ObjectMeta: parent.ObjectMeta,
-		{{ goField .Field }}: parent.Spec.{{ goField .Field }},
+		{{ goField .SpecField }}: parent.{{ goField .SpecField }},
 	}
 	sub.TypeMeta.Kind = "{{ $.Res.Name }}{{ title .Name }}"
 	sub.TypeMeta.APIVersion = v1alpha1.SchemeGroupVersion.String()
@@ -67,13 +67,39 @@ func (s *{{ .Name }}Storage) Update(ctx context.Context, name string, objInfo re
 		return nil, false, err
 	}
 
-	_, ok := updated.(*v1alpha1.{{ $.Res.Name }}{{ title .Name }})
+	sub, ok := updated.(*v1alpha1.{{ $.Res.Name }}{{ title .Name }})
 	if !ok {
 		return nil, false, fmt.Errorf("unexpected type %T", updated)
 	}
 
-	// TODO: wire sub-resource update to gRPC backend method {{ .GRPCMethod }}
-	return updated, false, nil
+	parentProto := convert.ObjectMetaToProto(sub.ObjectMeta)
+	protoObj := &pb.{{ $.Res.Name }}{
+		Metadata: parentProto,
+		Spec: &pb.{{ $.Res.Name }}Spec{
+			{{ goField .SpecField }}: convert.{{ goField .K8sType }}K8sToProto(sub.{{ goField .SpecField }}),
+		},
+	}
+
+	resp, err := s.client.{{ $.Res.Name }}s.{{ .GRPCMethod }}(ctx, &pb.{{ $.Res.Name }}Req_{{ .GRPCMethod }}{
+		{{ resGoPlural $.Res.Name }}: []*pb.{{ $.Res.Name }}{protoObj},
+	})
+	if err != nil {
+		return nil, false, err
+	}
+
+	out := resp.Get{{ resGoPlural $.Res.Name }}()
+	if len(out) == 0 {
+		return nil, false, fmt.Errorf("{{ $.Res.Name }} %q: sub-resource update returned empty response", name)
+	}
+
+	result := convert.{{ $.Res.Name }}FromProto(out[0])
+	retSub := &v1alpha1.{{ $.Res.Name }}{{ title .Name }}{
+		ObjectMeta: result.ObjectMeta,
+		{{ goField .SpecField }}: result.{{ goField .SpecField }},
+	}
+	retSub.TypeMeta.Kind = "{{ $.Res.Name }}{{ title .Name }}"
+	retSub.TypeMeta.APIVersion = v1alpha1.SchemeGroupVersion.String()
+	return retSub, false, nil
 }
 
 func (s *{{ .Name }}Storage) NamespaceScoped() bool {

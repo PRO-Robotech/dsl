@@ -11,19 +11,24 @@ import (
 type goTemplateData struct {
 	Module       string
 	DBSchema     string
+	DomainPkg    string
+	Project      ir.ProjectConfig
 	Resources    []ir.Resource
 	Restrictions map[string]ir.Restriction
 }
 
 type goResTemplateData struct {
-	Module string
-	Res    *ir.Resource
+	Module  string
+	Project ir.ProjectConfig
+	Res     *ir.Resource
 }
 
 func (g *Generator) goData() goTemplateData {
 	return goTemplateData{
 		Module:       g.Schema.Module,
 		DBSchema:     g.Schema.DBSchema,
+		DomainPkg:    g.Schema.Project.Name,
+		Project:      g.Schema.Project,
 		Resources:    g.Schema.Resources,
 		Restrictions: g.Schema.Restrictions,
 	}
@@ -38,7 +43,6 @@ func (g *Generator) loadGoTemplate(name string) (string, error) {
 	return string(data), nil
 }
 
-// GenerateGo produces all Go source files.
 func (g *Generator) GenerateGo() error {
 	if err := g.generateGoDomain(); err != nil {
 		return err
@@ -67,19 +71,22 @@ func (g *Generator) generateGoMain() error {
 	if err != nil {
 		return err
 	}
-	return g.writeScaffold("cmd/sgroups-backend/main.go", out)
+	proj := g.Schema.Project
+	return g.writeScaffold(fmt.Sprintf("cmd/%s-backend/main.go", proj.Name), out)
 }
 
 func (g *Generator) generateGoDomain() error {
 	data := g.goData()
+	proj := g.Schema.Project
+	domainDir := fmt.Sprintf("internal/shared/domains/%s", proj.Name)
 
 	genFiles := []struct {
 		tmpl string
 		out  string
 	}{
-		{"domain_resource.go.tmpl", "internal/shared/domains/sgroups/resources_gen.go"},
-		{"domain_types.go.tmpl", "internal/shared/domains/sgroups/types_gen.go"},
-		{"res_type.go.tmpl", "internal/shared/domains/sgroups/res_type_gen.go"},
+		{"domain_resource.go.tmpl", domainDir + "/resources_gen.go"},
+		{"domain_types.go.tmpl", domainDir + "/types_gen.go"},
+		{"res_type.go.tmpl", domainDir + "/res_type_gen.go"},
 	}
 
 	for _, gf := range genFiles {
@@ -96,7 +103,6 @@ func (g *Generator) generateGoDomain() error {
 		}
 	}
 
-	// Generated validators (restrictions-based)
 	if len(g.Schema.Restrictions) > 0 {
 		tmpl, err := g.loadGoTemplate("validators_gen.go.tmpl")
 		if err != nil {
@@ -107,12 +113,11 @@ func (g *Generator) generateGoDomain() error {
 		if err != nil {
 			return err
 		}
-		if err := g.writeGen("internal/shared/domains/sgroups/validators_gen.go", out); err != nil {
+		if err := g.writeGen(domainDir+"/validators_gen.go", out); err != nil {
 			return err
 		}
 	}
 
-	// Composite resource types
 	var composites []ir.Resource
 	for _, r := range g.Schema.Resources {
 		if r.IsComposite() {
@@ -131,12 +136,11 @@ func (g *Generator) generateGoDomain() error {
 		if err != nil {
 			return err
 		}
-		if err := g.writeGen("internal/shared/domains/sgroups/composite_gen.go", out); err != nil {
+		if err := g.writeGen(domainDir+"/composite_gen.go", out); err != nil {
 			return err
 		}
 	}
 
-	// scaffold: validators.go (custom business logic)
 	tmpl, err := g.loadGoTemplate("scaffold_validators.go.tmpl")
 	if err != nil {
 		return err
@@ -145,11 +149,12 @@ func (g *Generator) generateGoDomain() error {
 	if err != nil {
 		return err
 	}
-	return g.writeScaffold("internal/shared/domains/sgroups/validators.go", out)
+	return g.writeScaffold(domainDir+"/validators.go", out)
 }
 
-// validatorTemplateData is used for validators_gen.go.tmpl.
 type validatorTemplateData struct {
+	DomainPkg       string
+	Project         ir.ProjectConfig
 	RestrictionList []restrictionEntry
 	Resources       []ir.Resource
 	restrictionMap  map[string]bool
@@ -168,6 +173,8 @@ func (v validatorTemplateData) HasRestriction(name string) bool {
 
 func (g *Generator) buildValidatorData() validatorTemplateData {
 	vd := validatorTemplateData{
+		DomainPkg:      g.Schema.Project.Name,
+		Project:        g.Schema.Project,
 		Resources:      g.Schema.Resources,
 		restrictionMap: make(map[string]bool),
 	}
@@ -212,10 +219,6 @@ func (g *Generator) generateGoRepository() error {
 		outFile  string
 	}{
 		{"abstract.go.tmpl", "internal/sg-server/repository/abstract_gen.go"},
-		// PG reader/writer stubs disabled until pgRepo is implemented:
-		// {"reader_list.go.tmpl", "internal/sg-server/repository/pg-db-reader_list_gen.go"},
-		// {"reader_watch.go.tmpl", "internal/sg-server/repository/pg-db-reader_watch_gen.go"},
-		// {"writer_sync.go.tmpl", "internal/sg-server/repository/pg-db-writer_gen.go"},
 		{"syncer_decl.go.tmpl", "internal/sg-server/repository/pg/syncer/syncers_gen.go"},
 		{"pg_domain.go.tmpl", "internal/sg-server/repository/pg/domain/domain_gen.go"},
 		{"pg_dto.go.tmpl", "internal/sg-server/repository/pg/dto/dto_gen.go"},
@@ -235,7 +238,6 @@ func (g *Generator) generateGoRepository() error {
 		}
 	}
 
-	// scaffold
 	tmpl, err := g.loadGoTemplate("scaffold_pg_domain_custom.go.tmpl")
 	if err != nil {
 		return err
@@ -244,7 +246,19 @@ func (g *Generator) generateGoRepository() error {
 	if err != nil {
 		return err
 	}
-	return g.writeScaffold("internal/sg-server/repository/pg/domain/domain_custom.go", out)
+	if err := g.writeScaffold("internal/sg-server/repository/pg/domain/domain_custom.go", out); err != nil {
+		return err
+	}
+
+	pgRepoTmpl, err := g.loadGoTemplate("scaffold_pg_repository.go.tmpl")
+	if err != nil {
+		return err
+	}
+	pgRepoOut, err := g.execTemplate("pg_repository", pgRepoTmpl, data)
+	if err != nil {
+		return err
+	}
+	return g.writeScaffold("internal/sg-server/repository/pg_repository.go", pgRepoOut)
 }
 
 func (g *Generator) generateGoTransport() error {
@@ -277,7 +291,11 @@ func (g *Generator) generateGoTransport() error {
 		}
 
 		resDir := strings.ToLower(res.Name)
-		data := goResTemplateData{Module: g.Schema.Module, Res: res}
+		data := goResTemplateData{
+			Module:  g.Schema.Module,
+			Project: g.Schema.Project,
+			Res:     res,
+		}
 
 		for _, gt := range genTemplates {
 			tmpl, err := g.loadGoTemplate(gt.tmpl)

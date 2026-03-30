@@ -6,13 +6,13 @@ import (
 	"context"
 	"fmt"
 
-	sgroups "{{ .Module }}/internal/shared/domains/sgroups"
+	{{ $.DomainPkg }} "{{ .Module }}/internal/shared/domains/{{ $.DomainPkg }}"
 )
 
 {{ range .Resources }}
 {{- if not .IsComposite }}
 // List{{ .Name }}s fetches {{ .Name }} resources from the database.
-func (r *pgReader) List{{ .Name }}s(ctx context.Context, opts ...any) ([]sgroups.{{ .Name }}, error) {
+func (r *pgReader) List{{ .Name }}s(ctx context.Context, opts ...any) ([]{{ $.DomainPkg }}.{{ .Name }}, error) {
 	rows, err := r.lw{{ .Name }}.List(ctx, r.conn, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("list {{ lower .Name }}s: %w", err)

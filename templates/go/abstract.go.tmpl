@@ -5,7 +5,7 @@ package repository
 import (
 	"context"
 
-	sgroups "{{ .Module }}/internal/shared/domains/sgroups"
+	{{ .Project.Name }} "{{ .Module }}/internal/shared/domains/{{ .Project.Name }}"
 )
 
 // SyncOp defines the type of synchronization operation.
@@ -17,12 +17,51 @@ const (
 	Delete
 )
 
+// ListOption configures List queries.
+type ListOption func(*ListParams)
+
+// ListParams holds filter parameters for List queries.
+type ListParams struct {
+	Name       string
+	Namespace  string
+	SpecFields map[string]string
+}
+
+// ApplyListOptions applies ListOption functions and returns resolved params.
+func ApplyListOptions(opts []ListOption) ListParams {
+	var p ListParams
+	for _, o := range opts {
+		o(&p)
+	}
+	return p
+}
+
+// WithName filters results by exact resource name.
+func WithName(name string) ListOption {
+	return func(p *ListParams) { p.Name = name }
+}
+
+// WithNamespace filters results by namespace.
+func WithNamespace(ns string) ListOption {
+	return func(p *ListParams) { p.Namespace = ns }
+}
+
+// WithSpecField filters results by a spec field value.
+func WithSpecField(key, value string) ListOption {
+	return func(p *ListParams) {
+		if p.SpecFields == nil {
+			p.SpecFields = make(map[string]string)
+		}
+		p.SpecFields[key] = value
+	}
+}
+
 // Reader provides read access to all resources.
 type Reader interface {
 {{- range .Resources }}
 {{- if not .IsComposite }}
-	List{{ .Name }}s(ctx context.Context, opts ...any) ([]sgroups.{{ .Name }}, error)
-	Watch{{ .Name }}s(ctx context.Context, opts ...any) (<-chan sgroups.{{ .Name }}Event, error)
+	List{{ .Name }}s(ctx context.Context, opts ...ListOption) ([]{{ $.Project.Name }}.{{ .Name }}, error)
+	Watch{{ .Name }}s(ctx context.Context, opts ...any) (<-chan {{ $.Project.Name }}.{{ .Name }}Event, error)
 {{- end }}
 {{- end }}
 }
@@ -31,10 +70,10 @@ type Reader interface {
 type Writer interface {
 {{- range $res := .Resources }}
 {{- if not $res.IsComposite }}
-	Sync{{ $res.Name }}s(ctx context.Context, op SyncOp, items []sgroups.{{ $res.Name }}) error
+	Sync{{ $res.Name }}s(ctx context.Context, op SyncOp, items []{{ $.Project.Name }}.{{ $res.Name }}) error
 {{- end }}
 {{- range $res.ExtraSyncers }}
-	Sync{{ .Name }}(ctx context.Context, op SyncOp, items []sgroups.{{ $res.Name }}) error
+	Sync{{ .Name }}(ctx context.Context, op SyncOp, items []{{ $.Project.Name }}.{{ $res.Name }}) error
 {{- end }}
 {{- end }}
 	Commit(ctx context.Context) error
